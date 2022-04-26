@@ -1,0 +1,14 @@
+[package]
+name = "p2p_demo"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+libp2p = { version = "0.44.0", default-features = false, features = [
+    "identify", "relay", "ping", "noise", "plaintext", "tcp-async-io", "yamux", "autonat"] }
+futures = "0.3.1"
+env_logger = "0.9.0"
+clap = {version = "3.1.6", features = ["derive"]}
+getrandom = "0.2.6"
