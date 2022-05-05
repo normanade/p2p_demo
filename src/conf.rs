@@ -32,6 +32,10 @@ impl Conf {
     }
 
     pub fn get_bind_port(&self) -> u16 {
-        0
+        if let "hub" = self.role.as_str() {
+            self.hub.listen_port
+        } else {
+            0
+        }
     }
 }
