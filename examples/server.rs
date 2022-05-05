@@ -7,27 +7,35 @@ use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
 use std::error::Error;
 use std::net::{Ipv4Addr, Ipv6Addr};
-use clap::Parser;
 
-use p2p_demo::hub::Hub;
-use p2p_demo::opt::HubOpt;
+// use p2p_demo::hub::Hub;
+use p2p_demo::conf::Conf;
+use p2p_demo::Node;
+
+const CONFIG_PATH: &str = "node.ini";
 
 fn main() -> Result<(), Box<dyn Error>> {
+    // std::env::set_var("RUST_BACKTRACE", "1");
     env_logger::init();
 
-    let opt = HubOpt::parse();
-    println!("opt: {:?}", opt);
-    let mut hub = Hub::new();
-    println!("Local peer id: {:?}", hub.keys.peer_id);
+    let conf = Conf::new(CONFIG_PATH);
+    println!("conf: {:?}", conf);
 
+    let mut node = Node::new(conf.role.clone());
+    println!("Local peer id: {:?}", node.get_peer_id());
+        
     // Listen on all interfaces
-    let listen_addr = Multiaddr::empty()
-        .with(match opt.use_ipv6 {
-            Some(true) => Protocol::from(Ipv6Addr::UNSPECIFIED),
-            _ => Protocol::from(Ipv4Addr::UNSPECIFIED),
-        })
-        .with(Protocol::Tcp(opt.port));
-
-    hub.listen(listen_addr);
-    hub.wait()
+    let port = conf.get_bind_port();
+    let listen_addr = if let true = conf.use_ipv6 {
+        Multiaddr::empty()
+            .with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+            .with(Protocol::Tcp(port))
+            .with(Protocol::from(Ipv6Addr::UNSPECIFIED))
+    } else {
+        Multiaddr::empty()
+            .with(Protocol::from(Ipv4Addr::UNSPECIFIED))
+            .with(Protocol::Tcp(port))
+    };
+    node.listen(listen_addr);
+    node.wait()
 }

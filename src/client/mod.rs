@@ -1,12 +1,15 @@
 /// Defines Client
 
 use libp2p::core::upgrade;
+use libp2p::core::transport::OrTransport;
 use libp2p::tcp::TcpConfig;
+use libp2p::dns::DnsConfig;
 use libp2p::Transport;
 use libp2p::Multiaddr;
 use libp2p::noise::NoiseConfig;
 use libp2p::PeerId;
-use libp2p::swarm::{Swarm, SwarmEvent};
+use libp2p::swarm::{Swarm, SwarmBuilder, SwarmEvent};
+use libp2p::relay::v2::client::Client as RelayClient;
 use futures::executor::block_on;
 use futures::stream::StreamExt;
 use std::error::Error;
@@ -27,17 +30,23 @@ impl Client {
         let local_keys = Keys::new();
         let local_public_key = local_keys.key.public();
 
-        let tcp_transport = TcpConfig::new();
-        let transport = tcp_transport
-            .upgrade(upgrade::Version::V1)
-            .authenticate(NoiseConfig::xx(local_keys.noise_key.clone()).into_authenticated())
-            .multiplex(libp2p::yamux::YamuxConfig::default())
-            .boxed();
-        let swarm = Swarm::new(
+        let (relay_transport, client) = RelayClient::new_transport_and_behaviour(local_keys.peer_id);
+        let transport = OrTransport::new(
+            relay_transport,
+            block_on(DnsConfig::system(TcpConfig::new().port_reuse(true))).unwrap(),
+        )
+        .upgrade(upgrade::Version::V1)
+        .authenticate(NoiseConfig::xx(local_keys.noise_key.clone()).into_authenticated())
+        .multiplex(libp2p::yamux::YamuxConfig::default())
+        .boxed();
+
+        let swarm = SwarmBuilder::new(
             transport,
-            Behaviour::new(local_public_key, local_keys.peer_id),
+            Behaviour::new(local_public_key, client),
             local_keys.peer_id,
-        );
+        )
+        .dial_concurrency_factor(10_u8.try_into().unwrap())
+        .build();
 
         Self {
             keys: local_keys,
@@ -67,9 +76,5 @@ impl Client {
                 }
             }
         })
-    }
-    
-    pub fn add_nat_server(&mut self, peer_id: PeerId, server_addr: Multiaddr) {
-        self.swarm.behaviour_mut().add_nat_server(peer_id, server_addr);
     }
 }

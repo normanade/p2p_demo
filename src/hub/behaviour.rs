@@ -14,7 +14,6 @@ use libp2p::{
     PeerId,
 };
 use libp2p::relay::v2::relay::Relay;
-use libp2p::autonat::{Config as AutoNatConfig, Behaviour as AutoNat};
 
 use crate::Event;
 
@@ -24,7 +23,6 @@ pub struct Behaviour {
     relay: Relay,
     ping: Ping,
     identify: Identify,
-    autonat: AutoNat,
 }
 
 impl Behaviour {
@@ -36,10 +34,6 @@ impl Behaviour {
                 "/TODO/0.0.1".to_string(),
                 public_key,
             )),
-            autonat: AutoNat::new(
-                peer_id,
-                AutoNatConfig::default(),
-            ),
         }
     }
 }
