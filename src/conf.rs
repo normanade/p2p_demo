@@ -67,4 +67,8 @@ impl Conf {
             None
         }
     }
+
+    pub fn get_peers(self) -> Vec<PeerId> {
+        vec![PeerId::random()]
+    }
 }

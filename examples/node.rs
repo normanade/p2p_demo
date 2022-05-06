@@ -8,7 +8,6 @@ use libp2p::Multiaddr;
 use std::error::Error;
 use std::net::{Ipv4Addr, Ipv6Addr};
 
-// use p2p_demo::hub::Hub;
 use p2p_demo::conf::Conf;
 use p2p_demo::Node;
 
@@ -41,12 +40,12 @@ fn main() -> Result<(), Box<dyn Error>> {
     // only effective when `role' is client
     // connect to configured relay server
     let relay_addr = conf.get_relay_address();
-    node.relay(relay_addr);
-    // // get p2p peer id from config, dial it through relay
-    // let peer_ids = conf.get_peer_ids();
-    // for peer in peer_ids {
-    //     node.dial(relay_addr, peer);
-    // }
+    node.relay(relay_addr.clone());
+    // get p2p peer id from config, dial it through relay
+    let peer_ids = conf.get_peers();
+    for peer in peer_ids {
+        node.dial(relay_addr.clone(), peer);
+    }
 
     node.wait()
 }

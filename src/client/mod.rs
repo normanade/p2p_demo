@@ -124,8 +124,6 @@ impl Client {
                 .with(Protocol::P2pCircuit)
                 .with(Protocol::P2p(peer_id.into()))
         ).unwrap();
-        
-        self.swarm.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
     }
 
     pub fn wait(&mut self) -> Result<(), Box<dyn Error>> {
