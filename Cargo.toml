@@ -11,7 +11,6 @@ libp2p = { version = "0.44.0", default-features = false, features = [
 futures = "0.3.1"
 futures-timer = "3.0.2"
 env_logger = "0.9.0"
-clap = {version = "3.1.6", features = ["derive"]}
 getrandom = "0.2.6"
 config = {version = "0.13.1", features = ["ini"]}
 serde = { version = "1.0", features = ["derive"] }

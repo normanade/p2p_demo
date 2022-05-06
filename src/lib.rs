@@ -40,9 +40,9 @@ impl Node {
         };
     }
 
-    pub fn relay(&mut self, addr: Multiaddr) {
+    pub fn relay(&mut self, addr: Option<Multiaddr>) {
         match self {
-            Node::Client(x) => x.relay(addr),
+            Node::Client(x) => x.relay(addr.unwrap()),
             _ => (),
         };
     }
