@@ -7,6 +7,7 @@ use libp2p::Multiaddr;
 use libp2p::noise::NoiseConfig;
 use libp2p::swarm::{Swarm, SwarmEvent};
 use futures::executor::block_on;
+use futures::future::FutureExt;
 use futures::stream::StreamExt;
 use std::error::Error;
 
@@ -15,6 +16,7 @@ pub mod behaviour;
 use super::keys::Keys;
 use behaviour::Behaviour;
 use crate::Event::Relay as RelayEvent;
+use crate::Event::Identify as IdentifyEvent;
 
 pub struct Hub {
     pub keys: Keys,
@@ -50,17 +52,41 @@ impl Hub {
 
     pub fn listen(&mut self, addr: Multiaddr) {
         self.swarm.listen_on(addr).unwrap();
+        
+        // Wait to listen on all interfaces.
+        block_on(async {
+            let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
+            loop {
+                futures::select! {
+                    event = self.swarm.next() => {
+                        match event.unwrap() {
+                            SwarmEvent::NewListenAddr { address, .. } => {
+                                println!("Listening on {:?}", address);
+                            }
+                            event => panic!("{:?}", event),
+                        }
+                    }
+                    _ = delay => {
+                        // Likely listening on all interfaces now, thus continuing by breaking the loop.
+                        break;
+                    }
+                }
+            }
+        });
     }
 
     pub fn wait(&mut self) -> Result<(), Box<dyn Error>> {
         block_on(async {
             loop {
                 match self.swarm.next().await.expect("Infinite Stream.") {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        println!("Listening on {:?}", address);
+                    }
                     SwarmEvent::Behaviour(RelayEvent(event)) => {
                         println!("{:?}", event)
                     }
-                    SwarmEvent::NewListenAddr { address, .. } => {
-                        println!("Listening on {:?}", address);
+                    SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                        println!("{:?}", event)
                     }
                     _ => {}
                 }

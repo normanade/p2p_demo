@@ -40,6 +40,20 @@ impl Node {
         };
     }
 
+    pub fn relay(&mut self, addr: Option<Multiaddr>) {
+        match self {
+            Node::Client(x) => x.relay(addr.unwrap()),
+            _ => (),
+        };
+    }
+
+    pub fn dial(&mut self, addr: Option<Multiaddr>, peer_id: PeerId) {
+        match self {
+            Node::Client(x) => x.relay_peer(addr.unwrap(), peer_id),
+            _ => (),
+        };
+    }
+
     pub fn wait(&mut self) -> Result<(), Box<dyn Error>> {
         match self {
             Node::Hub(x) => x.wait(),

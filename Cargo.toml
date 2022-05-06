@@ -15,3 +15,4 @@ clap = {version = "3.1.6", features = ["derive"]}
 getrandom = "0.2.6"
 config = {version = "0.13.1", features = ["ini"]}
 serde = { version = "1.0", features = ["derive"] }
+async-std = "1.11.0"

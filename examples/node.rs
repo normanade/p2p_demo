@@ -23,19 +23,30 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let mut node = Node::new(conf.role.clone());
     println!("Local peer id: {:?}", node.get_peer_id());
-        
+
     // Listen on all interfaces
     let port = conf.get_bind_port();
-    let listen_addr = if let true = conf.use_ipv6 {
-        Multiaddr::empty()
+    let listen_addr = match conf.use_ipv6 {
+        true => Multiaddr::empty()
             .with(Protocol::from(Ipv4Addr::UNSPECIFIED))
             .with(Protocol::Tcp(port))
-            .with(Protocol::from(Ipv6Addr::UNSPECIFIED))
-    } else {
-        Multiaddr::empty()
+            .with(Protocol::from(Ipv6Addr::UNSPECIFIED)),
+        false => Multiaddr::empty()
             .with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-            .with(Protocol::Tcp(port))
+            .with(Protocol::Tcp(port)),
     };
+
     node.listen(listen_addr);
+
+    // only effective when `role' is client
+    // connect to configured relay server
+    let relay_addr = conf.get_relay_address();
+    node.relay(relay_addr);
+    // // get p2p peer id from config, dial it through relay
+    // let peer_ids = conf.get_peer_ids();
+    // for peer in peer_ids {
+    //     node.dial(relay_addr, peer);
+    // }
+
     node.wait()
 }

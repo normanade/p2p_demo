@@ -5,20 +5,27 @@ use libp2p::core::transport::OrTransport;
 use libp2p::tcp::TcpConfig;
 use libp2p::dns::DnsConfig;
 use libp2p::Transport;
+use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
 use libp2p::noise::NoiseConfig;
 use libp2p::PeerId;
 use libp2p::swarm::{Swarm, SwarmBuilder, SwarmEvent};
 use libp2p::relay::v2::client::Client as RelayClient;
+use libp2p::identify::{IdentifyEvent as IdentifyEventKinds, IdentifyInfo};
 use futures::executor::block_on;
+use futures::future::FutureExt;
 use futures::stream::StreamExt;
 use std::error::Error;
+use async_std::io;
 
 pub mod behaviour;
 
 use super::keys::Keys;
 use behaviour::Behaviour;
-use crate::Event::Relay as RelayEvent;
+use crate::Event::RelayClient as RelayClientEvent;
+use crate::Event::Identify as IdentifyEvent;
+use crate::Event::Ping as PingEvent;
+use crate::Event::Dcutr as DcutrEvent;
 
 pub struct Client {
     pub keys: Keys,
@@ -60,17 +67,94 @@ impl Client {
 
     pub fn listen(&mut self, addr: Multiaddr) {
         self.swarm.listen_on(addr).unwrap();
+
+        // Wait to listen on all interfaces.
+        block_on(async {
+            let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
+            loop {
+                futures::select! {
+                    event = self.swarm.next() => {
+                        match event.unwrap() {
+                            SwarmEvent::NewListenAddr { address, .. } => {
+                                println!("Listening on {:?}", address);
+                            }
+                            event => panic!("{:?}", event),
+                        }
+                    }
+                    _ = delay => {
+                        // Likely listening on all interfaces now, thus continuing by breaking the loop.
+                        break;
+                    }
+                }
+            }
+        });
+    }
+
+    pub fn relay(&mut self, addr: Multiaddr) {
+        block_on(async {
+            let mut input = String::new();
+            println!("Preparing to connect relay server {:?}", addr);
+            print!("PeerId of relay server: ");
+            io::stdin().read_line(&mut input).await.unwrap();
+            println!("Connecting...");
+        });
+
+        // dial the relay server
+        self.swarm.dial(addr.clone()).unwrap();
+        // listen from relay server
+        self.swarm.listen_on(addr).unwrap();
+
+        // Wait till connected to relay to learn external address.
+        block_on(async {
+            loop {
+                match self.swarm.next().await.unwrap() {
+                    // SwarmEvent::NewListenAddr { .. } => {}
+                    // SwarmEvent::Dialing { .. } => {}
+                    // SwarmEvent::ConnectionEstablished { .. } => {}
+                    // SwarmEvent::Behaviour(PingEvent(_)) => {}
+                    // SwarmEvent::Behaviour(RelayClientEvent(_)) => {}
+                    // SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Sent { .. })) => {}
+                    SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Received {
+                        info: IdentifyInfo { observed_addr, .. },
+                        ..
+                    })) => {
+                        println!("Observed address through relay: {:?}", observed_addr);
+                        break;
+                    }
+                    event => panic!("{:?}", event),
+                }
+            }
+        });
+    }
+
+    pub fn relay_peer(&mut self, addr: Multiaddr, peer_id: PeerId) {
+        self.swarm.dial(addr.with(Protocol::P2p(peer_id.into()))).unwrap();
     }
 
     pub fn wait(&mut self) -> Result<(), Box<dyn Error>> {
         block_on(async {
             loop {
                 match self.swarm.next().await.expect("Infinite Stream.") {
-                    SwarmEvent::Behaviour(RelayEvent(event)) => {
-                        println!("{:?}", event)
-                    }
                     SwarmEvent::NewListenAddr { address, .. } => {
                         println!("Listening on {:?}", address);
+                    }
+                    SwarmEvent::Behaviour(PingEvent(_)) => {}
+                    SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                        println!("{:?}", event)
+                    }
+                    SwarmEvent::Behaviour(DcutrEvent(event)) => {
+                        println!("{:?}", event)
+                    }
+                    SwarmEvent::Behaviour(RelayClientEvent(event)) => {
+                        println!("{:?}", event)
+                    }
+                    SwarmEvent::ConnectionEstablished {
+                        peer_id, endpoint, ..
+                    } => {
+                        println!("Established connection to {:?} via {:?}", peer_id, endpoint);
+                    }
+                    SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+                        println!("Outgoing connection error to {:?}: {:?}", peer_id, error);
                     }
                     _ => {}
                 }
