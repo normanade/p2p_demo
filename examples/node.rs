@@ -40,7 +40,7 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // only effective when `role' is client
     // connect to configured relay server
-    let relay_addr = conf.get_relay_address();
+    let relay_addr = conf.get_relay_address().unwrap();
     node.relay(relay_addr);
     // // get p2p peer id from config, dial it through relay
     // let peer_ids = conf.get_peer_ids();

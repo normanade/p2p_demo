@@ -3,8 +3,10 @@
 use config::{Config, File};
 use serde::Deserialize;
 use libp2p::Multiaddr;
+use libp2p::PeerId;
 use libp2p::multiaddr::Protocol;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use std::str::FromStr;
 
 #[derive(Debug, Deserialize, PartialEq)]
 pub struct Conf {
@@ -45,11 +47,21 @@ impl Conf {
                 true => self.client.hub_ip.parse::<Ipv6Addr>().unwrap().into(),
                 false => self.client.hub_ip.parse::<Ipv4Addr>().unwrap().into(),
             };
+            println!(
+                "Preparing to connect relay server at {}:{}",
+                self.client.hub_ip,
+                self.client.hub_port
+            );
+            
+            println!("Please input relay server peerid:");
+            let mut input = String::new();
+            std::io::stdin().read_line(&mut input).unwrap();
+            let peer_id = PeerId::from_str(input.trim()).expect("Invalid PeerId");
             Some(
                 Multiaddr::empty()
                 .with(relay_ip)
                 .with(Protocol::Tcp(self.client.hub_port))
-                .with(Protocol::P2pCircuit)
+                .with(Protocol::P2p(peer_id.into()))
             )
         } else {
             None

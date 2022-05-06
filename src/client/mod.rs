@@ -16,7 +16,6 @@ use futures::executor::block_on;
 use futures::future::FutureExt;
 use futures::stream::StreamExt;
 use std::error::Error;
-use async_std::io;
 
 pub mod behaviour;
 
@@ -91,29 +90,21 @@ impl Client {
     }
 
     pub fn relay(&mut self, addr: Multiaddr) {
-        block_on(async {
-            let mut input = String::new();
-            println!("Preparing to connect relay server {:?}", addr);
-            print!("PeerId of relay server: ");
-            io::stdin().read_line(&mut input).await.unwrap();
-            println!("Connecting...");
-        });
-
         // dial the relay server
         self.swarm.dial(addr.clone()).unwrap();
-        // listen from relay server
-        self.swarm.listen_on(addr).unwrap();
-
+        // // listen from relay server
+        // self.swarm.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
+ 
         // Wait till connected to relay to learn external address.
         block_on(async {
             loop {
                 match self.swarm.next().await.unwrap() {
-                    // SwarmEvent::NewListenAddr { .. } => {}
-                    // SwarmEvent::Dialing { .. } => {}
-                    // SwarmEvent::ConnectionEstablished { .. } => {}
-                    // SwarmEvent::Behaviour(PingEvent(_)) => {}
-                    // SwarmEvent::Behaviour(RelayClientEvent(_)) => {}
-                    // SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Sent { .. })) => {}
+                    SwarmEvent::NewListenAddr { .. } => {}
+                    SwarmEvent::Dialing { .. } => {}
+                    SwarmEvent::ConnectionEstablished { .. } => {}
+                    SwarmEvent::Behaviour(PingEvent(_)) => {}
+                    SwarmEvent::Behaviour(RelayClientEvent(_)) => {}
+                    SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Sent { .. })) => {}
                     SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Received {
                         info: IdentifyInfo { observed_addr, .. },
                         ..
@@ -128,7 +119,13 @@ impl Client {
     }
 
     pub fn relay_peer(&mut self, addr: Multiaddr, peer_id: PeerId) {
-        self.swarm.dial(addr.with(Protocol::P2p(peer_id.into()))).unwrap();
+        self.swarm.dial(
+            addr.clone()
+                .with(Protocol::P2pCircuit)
+                .with(Protocol::P2p(peer_id.into()))
+        ).unwrap();
+        
+        self.swarm.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
     }
 
     pub fn wait(&mut self) -> Result<(), Box<dyn Error>> {
