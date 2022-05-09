@@ -69,6 +69,9 @@ impl Conf {
     }
 
     pub fn get_peers(self) -> Vec<PeerId> {
-        vec![PeerId::random()]
+        println!("Please input relay client PeerID:");
+        let mut input = String::new();
+        std::io::stdin().read_line(&mut input).unwrap();
+        vec![PeerId::from_str(input.trim()).expect("Invalid PeerID")]
     }
 }
