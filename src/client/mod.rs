@@ -121,38 +121,42 @@ impl Client {
     }
 
     pub fn relay(&mut self, addr: Multiaddr) {
-        // listen from relay server
-        self.swarm2.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
- 
+        // dial the relay server
+        self.swarm1.dial(addr.clone()).unwrap();
         // Wait till connected to relay to learn external address.
         block_on(async {
             loop {
-                match self.swarm2.next().await.unwrap() {
+                match self.swarm1.next().await.unwrap() {
                     SwarmEvent::NewListenAddr { .. } => {}
                     SwarmEvent::Dialing { .. } => {}
                     SwarmEvent::ConnectionEstablished { .. } => {}
                     SwarmEvent::Behaviour(PingEvent(_)) => {}
-                    SwarmEvent::Behaviour(RelayClientEvent(_)) => {}
                     SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Sent { .. })) => {}
                     SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Received {
                         info: IdentifyInfo { observed_addr, .. },
                         ..
                     })) => {
-                        println!("swarm2 Observed address through relay: {:?}", observed_addr);
+                        println!("swarm1 Observed address through relay: {:?}", observed_addr);
                         break;
                     }
                     event => panic!("{:?}", event),
                 }
             }
         });
+
+        // listen from relay server
+        self.swarm2.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
     }
 
     pub fn relay_peer(&mut self, addr: Multiaddr, peer_id: PeerId) {
-        self.swarm1.dial(
-            addr.clone()
-                .with(Protocol::P2pCircuit)
-                .with(Protocol::P2p(peer_id.into()))
-        ).unwrap();
+        // peer with smaller id, dials the other side
+        if self.keys.peer_id < peer_id {
+            self.swarm1.dial(
+                addr.clone()
+                    .with(Protocol::P2pCircuit)
+                    .with(Protocol::P2p(peer_id.into()))
+            ).unwrap();
+        }
     }
 
     pub fn wait(&mut self) -> Result<(), Box<dyn Error>> {

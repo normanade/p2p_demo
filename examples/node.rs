@@ -7,6 +7,7 @@ use libp2p::multiaddr::Protocol;
 use libp2p::Multiaddr;
 use std::error::Error;
 use std::net::{Ipv4Addr, Ipv6Addr};
+use log::{info, debug};
 
 use p2p_demo::conf::Conf;
 use p2p_demo::Node;
@@ -18,10 +19,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
     let conf = Conf::new(CONFIG_PATH);
-    println!("conf: {:?}", conf);
+    debug!("Config file from {}: {:?}", CONFIG_PATH, conf);
 
     let mut node = Node::new(conf.role.clone());
-    println!("Local peer id: {:?}", node.get_peer_id());
+    info!("Local peer id: {:?}", node.get_peer_id());
 
     // Listen on all interfaces
     let port = conf.get_bind_port();
@@ -39,12 +40,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     // only effective when `role' is client
     // connect to configured relay server
-    let relay_addr = conf.get_relay_address();
-    node.relay(relay_addr.clone());
-    // get p2p peer id from config, dial it through relay
-    let peer_ids = conf.get_peers();
-    for peer in peer_ids {
-        node.dial(relay_addr.clone(), peer);
+    if let "client" = conf.role.as_str() {
+        let relay_addr = conf.get_relay_address();
+        node.relay(relay_addr.clone());
+        
+        // get p2p peer id from config, dial it through relay
+        let peer_ids = conf.get_peers();
+        for peer in peer_ids {
+            node.dial(relay_addr.clone(), peer);
+        }
     }
 
     node.wait()
