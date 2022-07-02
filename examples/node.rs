@@ -15,7 +15,8 @@ use p2p_demo::Node;
 const CONFIG_PATH: &str = "node.ini";
 
 fn main() -> Result<(), Box<dyn Error>> {
-    // std::env::set_var("RUST_BACKTRACE", "1");
+    std::env::set_var("RUST_BACKTRACE", "1");
+    std::env::set_var("RUST_LOG", "trace");
     env_logger::init();
 
     let conf = Conf::new(CONFIG_PATH);

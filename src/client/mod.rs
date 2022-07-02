@@ -10,12 +10,13 @@ use libp2p::Multiaddr;
 use libp2p::noise::NoiseConfig;
 use libp2p::PeerId;
 use libp2p::swarm::{Swarm, SwarmBuilder, SwarmEvent};
-use libp2p::relay::v2::client::Client as RelayClient;
+use libp2p::relay::v2::client::{Event as RelayClientEventKinds, Client as RelayClient};
 use libp2p::identify::{IdentifyEvent as IdentifyEventKinds, IdentifyInfo};
 use futures::executor::block_on;
 use futures::future::FutureExt;
 use futures::stream::StreamExt;
 use std::error::Error;
+use log::{info, error};
 
 pub mod behaviour;
 
@@ -98,7 +99,7 @@ impl Client {
                     event = self.swarm1.next() => {
                         match event.unwrap() {
                             SwarmEvent::NewListenAddr { address, .. } => {
-                                println!("swarm1 Listening on {:?}", address);
+                                info!("swarm1 Listening on {:?}", address);
                             }
                             event => panic!("{:?}", event),
                         }
@@ -106,7 +107,7 @@ impl Client {
                     event = self.swarm2.next() => {
                         match event.unwrap() {
                             SwarmEvent::NewListenAddr { address, .. } => {
-                                println!("swarm2 Listening on {:?}", address);
+                                info!("swarm2 Listening on {:?}", address);
                             }
                             event => panic!("{:?}", event),
                         }
@@ -123,26 +124,40 @@ impl Client {
     pub fn relay(&mut self, addr: Multiaddr) {
         // dial the relay server
         self.swarm1.dial(addr.clone()).unwrap();
-        // Wait till connected to relay to learn external address.
+        // Dial relay not for the reservation or relayed connection, but to
+        // (a) learn our local public address
+        // (b) enable a freshly started relay to learn its public address
         block_on(async {
+            let mut learned_observed_addr = false;
+            let mut told_relay_observed_addr = false;
+    
             loop {
                 match self.swarm1.next().await.unwrap() {
                     SwarmEvent::NewListenAddr { .. } => {}
                     SwarmEvent::Dialing { .. } => {}
                     SwarmEvent::ConnectionEstablished { .. } => {}
                     SwarmEvent::Behaviour(PingEvent(_)) => {}
-                    SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Sent { .. })) => {}
+                    SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Sent { .. })) => {
+                        info!("Told relay its public address.");
+                        told_relay_observed_addr = true;
+                    }
                     SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Received {
                         info: IdentifyInfo { observed_addr, .. },
                         ..
                     })) => {
-                        println!("swarm1 Observed address through relay: {:?}", observed_addr);
-                        break;
+                        info!("Relay told us our public address: {:?}", observed_addr);
+                        learned_observed_addr = true;
                     }
                     event => panic!("{:?}", event),
                 }
+    
+                if learned_observed_addr && told_relay_observed_addr {
+                    break;
+                }
             }
         });
+
+        self.swarm2.dial(addr.clone()).unwrap();
 
         // listen from relay server
         self.swarm2.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
@@ -150,7 +165,8 @@ impl Client {
 
     pub fn relay_peer(&mut self, addr: Multiaddr, peer_id: PeerId) {
         // peer with smaller id, dials the other side
-        if self.keys.peer_id < peer_id {
+        if self.keys.peer_id <= peer_id {
+            info!("swarm1 dialing peer {:?}", peer_id);
             self.swarm1.dial(
                 addr.clone()
                     .with(Protocol::P2pCircuit)
@@ -163,46 +179,55 @@ impl Client {
         block_on(async {
             loop {
                 match self.swarm1.next().await.expect("Infinite Stream.") {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        info!("swarm1 Listening on {:?}", address);
+                    }
                     SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                        println!("swarm1 Identify {:?}", event)
+                        info!("swarm1 Identify {:?}", event)
                     }
                     SwarmEvent::Behaviour(DcutrEvent(event)) => {
-                        println!("swarm1 Dcutr {:?}", event)
+                        info!("swarm1 Dcutr {:?}", event)
                     }
                     SwarmEvent::Behaviour(RelayClientEvent(event)) => {
-                        println!("swarm1 Relay {:?}", event)
+                        info!("swarm1 Relay {:?}", event)
                     }
                     SwarmEvent::ConnectionEstablished {
                         peer_id, endpoint, ..
                     } => {
-                        println!("swarm1 Established connection to {:?} via {:?}", peer_id, endpoint);
+                        info!("swarm1 Established connection to {:?} via {:?}", peer_id, endpoint);
                     }
                     SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                        println!("swarm1 Outgoing connection error to {:?}: {:?}", peer_id, error);
+                        error!("swarm1 Outgoing connection error to {:?}: {:?}", peer_id, error);
                     }
                     _ => {}
                 }
                 match self.swarm2.next().await.expect("Infinite Stream.") {
                     SwarmEvent::NewListenAddr { address, .. } => {
-                        println!("swarm2 Listening on {:?}", address);
+                        info!("swarm2 Listening on {:?}", address);
                     }
                     SwarmEvent::Behaviour(PingEvent(_)) => {}
                     SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                        println!("swarm2 Identify {:?}", event)
+                        info!("swarm2 Identify {:?}", event)
                     }
                     SwarmEvent::Behaviour(DcutrEvent(event)) => {
-                        println!("swarm2 Dcutr {:?}", event)
+                        info!("swarm2 Dcutr {:?}", event)
+                    }
+                    SwarmEvent::Behaviour(RelayClientEvent(RelayClientEventKinds::ReservationReqAccepted {
+                        ..
+                    })) => {
+                        // listen swarm only
+                        info!("swarm2 Relay Server accepted our reservation request.");
                     }
                     SwarmEvent::Behaviour(RelayClientEvent(event)) => {
-                        println!("swarm2 Relay {:?}", event)
+                        info!("swarm2 Relay {:?}", event)
                     }
                     SwarmEvent::ConnectionEstablished {
                         peer_id, endpoint, ..
                     } => {
-                        println!("swarm2 Established connection to {:?} via {:?}", peer_id, endpoint);
+                        info!("swarm2 Established connection to {:?} via {:?}", peer_id, endpoint);
                     }
                     SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                        println!("swarm2 Outgoing connection error to {:?}: {:?}", peer_id, error);
+                        error!("swarm2 Outgoing connection error to {:?}: {:?}", peer_id, error);
                     }
                     _ => {}
                 }
