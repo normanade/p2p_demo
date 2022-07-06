@@ -17,6 +17,8 @@ use futures::{
     pin_mut,
     select,
 };
+use std::time::Duration;
+use async_std::task;
 
 use p2p_demo::conf::Conf;
 use p2p_demo::Node;
@@ -26,7 +28,7 @@ const CONFIG_PATH: &str = "node.ini";
 fn main() {
     std::env::set_var("RUST_BACKTRACE", "1");
     if let Err(_) = std::env::var("RUST_LOG") {
-        std::env::set_var("RUST_LOG", "info");
+        std::env::set_var("RUST_LOG", "debug");
     }
     env_logger::init();
 
@@ -54,15 +56,34 @@ async fn async_main() {
         
         select! {
             peer = f1 => {
-                let mut guard = node.lock().await;
-                guard.dial(relay_addr.clone(), peer);
-                drop(guard);
+                println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+                println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+                println!("!!!! INPUT GOT  !!!!!!!!!");
+                let mut dialed = false;
+                while !dialed {
+                    task::sleep(Duration::from_millis(40)).await;
+                    if let Some(mut guard) = node.try_lock() {
+                        println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+                        println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+                        println!("!!!! DIAL LOCK GOT  !!!!!");
+                        guard.dial(relay_addr.clone(), peer);
+                        dialed = true;
+                        drop(guard);
+                        println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+                        println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+                        println!("!!!! DIAL LOCK DROP !!!!!");
+                    }
+                }
             },
             _ = f2 => unreachable!(),
         }
+        wait_response(&node).await
     }
     else {
-        node.get_mut().wait().await.unwrap();
+        loop {
+            task::sleep(Duration::from_millis(100)).await;
+            node.get_mut().wait().await;
+        }
     }
 }
 
@@ -90,7 +111,17 @@ async fn get_peer_id() -> PeerId {
 }
 
 async fn wait_response(node: &Mutex<Node>) {
-    let mut guard = node.lock().await;
-    guard.wait().await.unwrap();
-    drop(guard);
+    loop {
+        task::sleep(Duration::from_millis(100)).await;
+        if let Some(mut guard) = node.try_lock() {
+            println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+            println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+            println!("!!!! WAIT LOCK GOT  !!!!!");
+            guard.wait().await;
+            drop(guard);
+            println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+            println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
+            println!("!!!! WAIT LOCK DROP !!!!!");
+        }
+    }
 }

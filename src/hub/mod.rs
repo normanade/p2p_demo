@@ -1,7 +1,7 @@
 /// Defines Hub
 
 use libp2p::core::upgrade;
-use libp2p::tcp::TcpConfig;
+use libp2p::tcp::TcpTransport;
 use libp2p::Transport;
 use libp2p::Multiaddr;
 use libp2p::noise::NoiseConfig;
@@ -9,7 +9,6 @@ use libp2p::swarm::{Swarm, SwarmEvent};
 use futures::executor::block_on;
 use futures::future::FutureExt;
 use futures::stream::StreamExt;
-use std::error::Error;
 use log::info;
 
 pub mod behaviour;
@@ -29,7 +28,7 @@ impl Hub {
         let local_keys = Keys::new();
         let local_public_key = local_keys.key.public();
 
-        let tcp_transport = TcpConfig::new();
+        let tcp_transport = TcpTransport::default();
         let transport = tcp_transport
             .upgrade(upgrade::Version::V1)
             .authenticate(NoiseConfig::xx(local_keys.noise_key.clone()).into_authenticated())
@@ -76,20 +75,18 @@ impl Hub {
         });
     }
 
-    pub async fn wait(&mut self) -> Result<(), Box<dyn Error>> {
-        loop {
-            match self.swarm.next().await.expect("Infinite Stream.") {
-                SwarmEvent::NewListenAddr { address, .. } => {
-                    info!("Listening on {:?}", address);
-                }
-                SwarmEvent::Behaviour(RelayEvent(event)) => {
-                    info!("{:?}", event)
-                }
-                SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                    info!("{:?}", event)
-                }
-                _ => {}
+    pub async fn wait(&mut self) {
+        match self.swarm.next().await.expect("Infinite Stream.") {
+            SwarmEvent::NewListenAddr { address, .. } => {
+                info!("Listening on {:?}", address)
             }
+            SwarmEvent::Behaviour(RelayEvent(event)) => {
+                info!("{:?}", event)
+            }
+            SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                info!("{:?}", event)
+            }
+            _ => {}
         }
     }
 }

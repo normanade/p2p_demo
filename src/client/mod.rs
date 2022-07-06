@@ -2,7 +2,7 @@
 
 use libp2p::core::upgrade;
 use libp2p::core::transport::OrTransport;
-use libp2p::tcp::TcpConfig;
+use libp2p::tcp::{GenTcpConfig, TcpTransport};
 use libp2p::dns::DnsConfig;
 use libp2p::Transport;
 use libp2p::multiaddr::Protocol;
@@ -15,7 +15,6 @@ use libp2p::identify::{IdentifyEvent as IdentifyEventKinds, IdentifyInfo};
 use futures::executor::block_on;
 use futures::future::FutureExt;
 use futures::stream::StreamExt;
-use std::error::Error;
 use log::{info, error};
 
 pub mod behaviour;
@@ -44,7 +43,10 @@ impl Client {
         let (relay_transport1, client1) = RelayClient::new_transport_and_behaviour(local_keys.peer_id);
         let transport1 = OrTransport::new(
             relay_transport1,
-            block_on(DnsConfig::system(TcpConfig::new().port_reuse(true))).unwrap(),
+            block_on(DnsConfig::system(TcpTransport::new(
+                GenTcpConfig::default().port_reuse(true),
+            )))
+            .unwrap()
         )
         .upgrade(upgrade::Version::V1)
         .authenticate(NoiseConfig::xx(local_keys.noise_key.clone()).into_authenticated())
@@ -54,7 +56,10 @@ impl Client {
         let (relay_transport2, client2) = RelayClient::new_transport_and_behaviour(local_keys.peer_id);
         let transport2 = OrTransport::new(
             relay_transport2,
-            block_on(DnsConfig::system(TcpConfig::new().port_reuse(true))).unwrap(),
+            block_on(DnsConfig::system(TcpTransport::new(
+                GenTcpConfig::default().port_reuse(true),
+            )))
+            .unwrap()
         )
         .upgrade(upgrade::Version::V1)
         .authenticate(NoiseConfig::xx(local_keys.noise_key.clone()).into_authenticated())
@@ -170,61 +175,59 @@ impl Client {
         ).unwrap();
     }
 
-    pub async fn wait(&mut self) -> Result<(), Box<dyn Error>> {
-        loop {
-            match self.swarm1.next().await.expect("Infinite Stream.") {
-                SwarmEvent::NewListenAddr { address, .. } => {
-                    info!("swarm1 Listening on {:?}", address);
-                }
-                SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                    info!("swarm1 Identify {:?}", event)
-                }
-                SwarmEvent::Behaviour(DcutrEvent(event)) => {
-                    info!("swarm1 Dcutr {:?}", event)
-                }
-                SwarmEvent::Behaviour(RelayClientEvent(event)) => {
-                    info!("swarm1 Relay {:?}", event)
-                }
-                SwarmEvent::ConnectionEstablished {
-                    peer_id, endpoint, ..
-                } => {
-                    info!("swarm1 Established connection to {:?} via {:?}", peer_id, endpoint);
-                }
-                SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                    error!("swarm1 Outgoing connection error to {:?}: {:?}", peer_id, error);
-                }
-                _ => {}
+    pub async fn wait(&mut self) {
+        match self.swarm1.next().await.unwrap() {
+            SwarmEvent::NewListenAddr { address, .. } => {
+                info!("swarm1 Listening on {:?}", address);
             }
-            match self.swarm2.next().await.expect("Infinite Stream.") {
-                SwarmEvent::NewListenAddr { address, .. } => {
-                    info!("swarm2 Listening on {:?}", address);
-                }
-                SwarmEvent::Behaviour(PingEvent(_)) => {}
-                SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                    info!("swarm2 Identify {:?}", event)
-                }
-                SwarmEvent::Behaviour(DcutrEvent(event)) => {
-                    info!("swarm2 Dcutr {:?}", event)
-                }
-                SwarmEvent::Behaviour(RelayClientEvent(RelayClientEventKinds::ReservationReqAccepted {
-                    ..
-                })) => {
-                    // listen swarm only
-                    info!("swarm2 Relay Server accepted our reservation request.");
-                }
-                SwarmEvent::Behaviour(RelayClientEvent(event)) => {
-                    info!("swarm2 Relay {:?}", event)
-                }
-                SwarmEvent::ConnectionEstablished {
-                    peer_id, endpoint, ..
-                } => {
-                    info!("swarm2 Established connection to {:?} via {:?}", peer_id, endpoint);
-                }
-                SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                    error!("swarm2 Outgoing connection error to {:?}: {:?}", peer_id, error);
-                }
-                _ => {}
+            SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                info!("swarm1 Identify {:?}", event)
             }
+            SwarmEvent::Behaviour(DcutrEvent(event)) => {
+                info!("swarm1 Dcutr {:?}", event)
+            }
+            SwarmEvent::Behaviour(RelayClientEvent(event)) => {
+                info!("swarm1 Relay {:?}", event)
+            }
+            SwarmEvent::ConnectionEstablished {
+                peer_id, endpoint, ..
+            } => {
+                info!("swarm1 Established connection to {:?} via {:?}", peer_id, endpoint);
+            }
+            SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+                error!("swarm1 Outgoing connection error to {:?}: {:?}", peer_id, error);
+            }
+            _ => {}
+        }
+        match self.swarm2.next().await.unwrap() {
+            SwarmEvent::NewListenAddr { address, .. } => {
+                info!("swarm2 Listening on {:?}", address);
+            }
+            SwarmEvent::Behaviour(PingEvent(_)) => {}
+            SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                info!("swarm2 Identify {:?}", event)
+            }
+            SwarmEvent::Behaviour(DcutrEvent(event)) => {
+                info!("swarm2 Dcutr {:?}", event)
+            }
+            SwarmEvent::Behaviour(RelayClientEvent(RelayClientEventKinds::ReservationReqAccepted {
+                ..
+            })) => {
+                // listen swarm only
+                info!("swarm2 Relay Server accepted our reservation request.");
+            }
+            SwarmEvent::Behaviour(RelayClientEvent(event)) => {
+                info!("swarm2 Relay {:?}", event)
+            }
+            SwarmEvent::ConnectionEstablished {
+                peer_id, endpoint, ..
+            } => {
+                info!("swarm2 Established connection to {:?} via {:?}", peer_id, endpoint);
+            }
+            SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+                error!("swarm2 Outgoing connection error to {:?}: {:?}", peer_id, error);
+            }
+            _ => {}
         }
     }
 }
