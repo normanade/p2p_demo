@@ -10,6 +10,7 @@ use futures::executor::block_on;
 use futures::future::FutureExt;
 use futures::stream::StreamExt;
 use std::error::Error;
+use log::info;
 
 pub mod behaviour;
 
@@ -61,7 +62,7 @@ impl Hub {
                     event = self.swarm.next() => {
                         match event.unwrap() {
                             SwarmEvent::NewListenAddr { address, .. } => {
-                                println!("Listening on {:?}", address);
+                                info!("Listening on {:?}", address);
                             }
                             event => panic!("{:?}", event),
                         }
@@ -75,22 +76,20 @@ impl Hub {
         });
     }
 
-    pub fn wait(&mut self) -> Result<(), Box<dyn Error>> {
-        block_on(async {
-            loop {
-                match self.swarm.next().await.expect("Infinite Stream.") {
-                    SwarmEvent::NewListenAddr { address, .. } => {
-                        println!("Listening on {:?}", address);
-                    }
-                    SwarmEvent::Behaviour(RelayEvent(event)) => {
-                        println!("{:?}", event)
-                    }
-                    SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                        println!("{:?}", event)
-                    }
-                    _ => {}
+    pub async fn wait(&mut self) -> Result<(), Box<dyn Error>> {
+        loop {
+            match self.swarm.next().await.expect("Infinite Stream.") {
+                SwarmEvent::NewListenAddr { address, .. } => {
+                    info!("Listening on {:?}", address);
                 }
+                SwarmEvent::Behaviour(RelayEvent(event)) => {
+                    info!("{:?}", event)
+                }
+                SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                    info!("{:?}", event)
+                }
+                _ => {}
             }
-        })
+        }
     }
 }

@@ -157,81 +157,74 @@ impl Client {
             }
         });
 
-        self.swarm2.dial(addr.clone()).unwrap();
-
         // listen from relay server
         self.swarm2.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
     }
 
     pub fn relay_peer(&mut self, addr: Multiaddr, peer_id: PeerId) {
-        // peer with smaller id, dials the other side
-        if self.keys.peer_id <= peer_id {
-            info!("swarm1 dialing peer {:?}", peer_id);
-            self.swarm1.dial(
-                addr.clone()
-                    .with(Protocol::P2pCircuit)
-                    .with(Protocol::P2p(peer_id.into()))
-            ).unwrap();
-        }
+        info!("swarm1 dialing peer {:?}", peer_id);
+        self.swarm1.dial(
+            addr.clone()
+                .with(Protocol::P2pCircuit)
+                .with(Protocol::P2p(peer_id.into()))
+        ).unwrap();
     }
 
-    pub fn wait(&mut self) -> Result<(), Box<dyn Error>> {
-        block_on(async {
-            loop {
-                match self.swarm1.next().await.expect("Infinite Stream.") {
-                    SwarmEvent::NewListenAddr { address, .. } => {
-                        info!("swarm1 Listening on {:?}", address);
-                    }
-                    SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                        info!("swarm1 Identify {:?}", event)
-                    }
-                    SwarmEvent::Behaviour(DcutrEvent(event)) => {
-                        info!("swarm1 Dcutr {:?}", event)
-                    }
-                    SwarmEvent::Behaviour(RelayClientEvent(event)) => {
-                        info!("swarm1 Relay {:?}", event)
-                    }
-                    SwarmEvent::ConnectionEstablished {
-                        peer_id, endpoint, ..
-                    } => {
-                        info!("swarm1 Established connection to {:?} via {:?}", peer_id, endpoint);
-                    }
-                    SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                        error!("swarm1 Outgoing connection error to {:?}: {:?}", peer_id, error);
-                    }
-                    _ => {}
+    pub async fn wait(&mut self) -> Result<(), Box<dyn Error>> {
+        loop {
+            match self.swarm1.next().await.expect("Infinite Stream.") {
+                SwarmEvent::NewListenAddr { address, .. } => {
+                    info!("swarm1 Listening on {:?}", address);
                 }
-                match self.swarm2.next().await.expect("Infinite Stream.") {
-                    SwarmEvent::NewListenAddr { address, .. } => {
-                        info!("swarm2 Listening on {:?}", address);
-                    }
-                    SwarmEvent::Behaviour(PingEvent(_)) => {}
-                    SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                        info!("swarm2 Identify {:?}", event)
-                    }
-                    SwarmEvent::Behaviour(DcutrEvent(event)) => {
-                        info!("swarm2 Dcutr {:?}", event)
-                    }
-                    SwarmEvent::Behaviour(RelayClientEvent(RelayClientEventKinds::ReservationReqAccepted {
-                        ..
-                    })) => {
-                        // listen swarm only
-                        info!("swarm2 Relay Server accepted our reservation request.");
-                    }
-                    SwarmEvent::Behaviour(RelayClientEvent(event)) => {
-                        info!("swarm2 Relay {:?}", event)
-                    }
-                    SwarmEvent::ConnectionEstablished {
-                        peer_id, endpoint, ..
-                    } => {
-                        info!("swarm2 Established connection to {:?} via {:?}", peer_id, endpoint);
-                    }
-                    SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                        error!("swarm2 Outgoing connection error to {:?}: {:?}", peer_id, error);
-                    }
-                    _ => {}
+                SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                    info!("swarm1 Identify {:?}", event)
                 }
+                SwarmEvent::Behaviour(DcutrEvent(event)) => {
+                    info!("swarm1 Dcutr {:?}", event)
+                }
+                SwarmEvent::Behaviour(RelayClientEvent(event)) => {
+                    info!("swarm1 Relay {:?}", event)
+                }
+                SwarmEvent::ConnectionEstablished {
+                    peer_id, endpoint, ..
+                } => {
+                    info!("swarm1 Established connection to {:?} via {:?}", peer_id, endpoint);
+                }
+                SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+                    error!("swarm1 Outgoing connection error to {:?}: {:?}", peer_id, error);
+                }
+                _ => {}
             }
-        })
+            match self.swarm2.next().await.expect("Infinite Stream.") {
+                SwarmEvent::NewListenAddr { address, .. } => {
+                    info!("swarm2 Listening on {:?}", address);
+                }
+                SwarmEvent::Behaviour(PingEvent(_)) => {}
+                SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                    info!("swarm2 Identify {:?}", event)
+                }
+                SwarmEvent::Behaviour(DcutrEvent(event)) => {
+                    info!("swarm2 Dcutr {:?}", event)
+                }
+                SwarmEvent::Behaviour(RelayClientEvent(RelayClientEventKinds::ReservationReqAccepted {
+                    ..
+                })) => {
+                    // listen swarm only
+                    info!("swarm2 Relay Server accepted our reservation request.");
+                }
+                SwarmEvent::Behaviour(RelayClientEvent(event)) => {
+                    info!("swarm2 Relay {:?}", event)
+                }
+                SwarmEvent::ConnectionEstablished {
+                    peer_id, endpoint, ..
+                } => {
+                    info!("swarm2 Established connection to {:?} via {:?}", peer_id, endpoint);
+                }
+                SwarmEvent::OutgoingConnectionError { peer_id, error } => {
+                    error!("swarm2 Outgoing connection error to {:?}: {:?}", peer_id, error);
+                }
+                _ => {}
+            }
+        }
     }
 }

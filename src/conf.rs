@@ -68,10 +68,12 @@ impl Conf {
         }
     }
 
-    pub fn get_peers(self) -> Vec<PeerId> {
-        println!("Please input relay client PeerID:");
-        let mut input = String::new();
-        std::io::stdin().read_line(&mut input).unwrap();
-        vec![PeerId::from_str(input.trim()).expect("Invalid PeerID")]
-    }
+    // pub async fn get_peers(self) -> Vec<PeerId> {
+    //     println!("Please input relay client PeerID:");
+        
+    //     let mut input = String::new();
+    //     async_std::io::stdin().read_line(&mut input).await.unwrap();
+    //     let peer = PeerId::from_str(input.trim()).expect("Invalid PeerID");
+    //     vec![peer]
+    // }
 }

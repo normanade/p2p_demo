@@ -54,10 +54,10 @@ impl Node {
         };
     }
 
-    pub fn wait(&mut self) -> Result<(), Box<dyn Error>> {
+    pub async fn wait(&mut self) -> Result<(), Box<dyn Error>> {
         match self {
-            Node::Hub(x) => x.wait(),
-            Node::Client(x) => x.wait(),
+            Node::Hub(x) => x.wait().await,
+            Node::Client(x) => x.wait().await,
         }
     }
 }
