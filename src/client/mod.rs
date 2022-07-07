@@ -183,6 +183,9 @@ impl Client {
             SwarmEvent::Behaviour(IdentifyEvent(event)) => {
                 info!("swarm1 Identify {:?}", event)
             }
+            SwarmEvent::Behaviour(PingEvent(event)) => {
+                info!("swarm1 Ping {:?}", event)
+            }
             SwarmEvent::Behaviour(DcutrEvent(event)) => {
                 info!("swarm1 Dcutr {:?}", event)
             }
@@ -206,9 +209,12 @@ impl Client {
             SwarmEvent::NewListenAddr { address, .. } => {
                 info!("swarm2 Listening on {:?}", address);
             }
-            SwarmEvent::Behaviour(PingEvent(_)) => {}
+            // SwarmEvent::Behaviour(PingEvent(_)) => {}
             SwarmEvent::Behaviour(IdentifyEvent(event)) => {
                 info!("swarm2 Identify {:?}", event)
+            }
+            SwarmEvent::Behaviour(PingEvent(event)) => {
+                info!("swarm2 Ping {:?}", event)
             }
             SwarmEvent::Behaviour(DcutrEvent(event)) => {
                 info!("swarm2 Dcutr {:?}", event)
