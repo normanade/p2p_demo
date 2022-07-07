@@ -2,8 +2,6 @@
 
 use libp2p::PeerId;
 use libp2p::Multiaddr;
-use std::time::Duration;
-use async_std::future;
 
 pub mod keys;
 pub mod conf;
@@ -58,15 +56,13 @@ impl Node {
     pub async fn wait(&mut self) {
         match self {
             Node::Hub(x) => {
-                let dur = Duration::from_micros(100);
-                future::timeout(dur, x.wait()).await.unwrap_or(());
+                x.wait().await;
             }
             Node::Client(x) => {
-                let dur = Duration::from_micros(50);
-                future::timeout(dur, x.listen_wait()).await.unwrap_or(());
-                future::timeout(dur, x.dial_wait()).await.unwrap_or(());
+                x.listen_wait().await;
+                x.dial_wait().await;
             }
-        };
+        }
     }
 }
 
