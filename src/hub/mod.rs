@@ -81,10 +81,10 @@ impl Hub {
                 info!("Listening on {:?}", address)
             }
             SwarmEvent::Behaviour(RelayEvent(event)) => {
-                info!("{:?}", event)
+                info!("Relay {:?}", event)
             }
             SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                info!("{:?}", event)
+                info!("Identify {:?}", event)
             }
             _ => {}
         }
