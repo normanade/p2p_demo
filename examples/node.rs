@@ -19,6 +19,7 @@ use futures::{
 };
 use std::time::Duration;
 use async_std::task;
+use async_std::future;
 
 use p2p_demo::conf::Conf;
 use p2p_demo::Node;
@@ -61,11 +62,11 @@ async fn async_main() {
                     task::sleep(Duration::from_micros(90)).await;
                     println!("---- TRY LOCK DIAL -----");
                     if let Some(mut guard) = node.try_lock() {
-                        // println!("!!!! DIAL LOCK GOT  !!!!!");
+                        println!("!!!! DIAL LOCK GOT  !!!!!");
                         guard.dial(relay_addr.clone(), peer);
                         dialed = true;
                         drop(guard);
-                        // println!("!!!! DIAL LOCK DROP !!!!!");
+                        println!("!!!! DIAL LOCK DROP !!!!!");
                     }
                 }
             },
@@ -109,12 +110,14 @@ async fn wait_response(node: &Mutex<Node>) {
     // every loop lasts 200 microseconds = 0.2 milliseconds
     loop {
         task::sleep(Duration::from_micros(100)).await;
-        // println!("---- TRY LOCK WAIT -----");
+        println!("---- TRY LOCK WAIT -----");
+        let dur = Duration::from_micros(100);
         if let Some(mut guard) = node.try_lock() {
-            // println!("!!!! WAIT LOCK GOT  !!!!!");
-            guard.wait().await;
+            println!("!!!! WAIT LOCK GOT  !!!!!");
+            // guard.wait().await;
+            future::timeout(dur, guard.wait()).await.unwrap_or(());
             drop(guard);
-            // println!("!!!! WAIT LOCK DROP !!!!!");
+            println!("!!!! WAIT LOCK DROP !!!!!");
         }
     }
 }
