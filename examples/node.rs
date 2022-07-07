@@ -56,22 +56,16 @@ async fn async_main() {
         
         select! {
             peer = f1 => {
-                println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
-                println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
-                println!("!!!! INPUT GOT  !!!!!!!!!");
                 let mut dialed = false;
                 while !dialed {
-                    task::sleep(Duration::from_millis(40)).await;
+                    task::sleep(Duration::from_micros(90)).await;
+                    println!("---- TRY LOCK DIAL -----");
                     if let Some(mut guard) = node.try_lock() {
-                        println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
-                        println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
-                        println!("!!!! DIAL LOCK GOT  !!!!!");
+                        // println!("!!!! DIAL LOCK GOT  !!!!!");
                         guard.dial(relay_addr.clone(), peer);
                         dialed = true;
                         drop(guard);
-                        println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
-                        println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
-                        println!("!!!! DIAL LOCK DROP !!!!!");
+                        // println!("!!!! DIAL LOCK DROP !!!!!");
                     }
                 }
             },
@@ -81,8 +75,7 @@ async fn async_main() {
     }
     else {
         loop {
-            task::sleep(Duration::from_millis(100)).await;
-            node.get_mut().wait().await;
+            node.get_mut().wait().await
         }
     }
 }
@@ -104,6 +97,8 @@ fn bind_local_address(conf: &Conf, node: &mut Node) {
 }
 
 async fn get_peer_id() -> PeerId {
+    // wait 3 seconds till swarms connected to relay server
+    task::sleep(Duration::from_secs(3)).await;
     println!("Please input relay client PeerID:");
     let mut input = String::new();
     async_std::io::stdin().read_line(&mut input).await.unwrap();
@@ -111,17 +106,15 @@ async fn get_peer_id() -> PeerId {
 }
 
 async fn wait_response(node: &Mutex<Node>) {
+    // every loop lasts 200 microseconds = 0.2 milliseconds
     loop {
-        task::sleep(Duration::from_millis(100)).await;
+        task::sleep(Duration::from_micros(100)).await;
+        // println!("---- TRY LOCK WAIT -----");
         if let Some(mut guard) = node.try_lock() {
-            println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
-            println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
-            println!("!!!! WAIT LOCK GOT  !!!!!");
+            // println!("!!!! WAIT LOCK GOT  !!!!!");
             guard.wait().await;
             drop(guard);
-            println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
-            println!("!!!!!!!!!!!!!!!!!!!!!!!!!");
-            println!("!!!! WAIT LOCK DROP !!!!!");
+            // println!("!!!! WAIT LOCK DROP !!!!!");
         }
     }
 }
