@@ -56,12 +56,17 @@ impl Node {
     }
 
     pub async fn wait(&mut self) {
-        let dur = Duration::from_millis(500);
         match self {
-            Node::Hub(x) => future::timeout(dur, x.wait()).await.unwrap_or(()),
-            Node::Client(x) => future::timeout(dur, x.wait()).await.unwrap_or(()),
+            Node::Hub(x) => {
+                let dur = Duration::from_micros(100);
+                future::timeout(dur, x.wait()).await.unwrap_or(());
+            }
+            Node::Client(x) => {
+                let dur = Duration::from_micros(50);
+                future::timeout(dur, x.listen_wait()).await.unwrap_or(());
+                future::timeout(dur, x.dial_wait()).await.unwrap_or(());
+            }
         };
-        ()
     }
 }
 

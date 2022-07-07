@@ -175,7 +175,7 @@ impl Client {
         ).unwrap();
     }
 
-    pub async fn wait(&mut self) {
+    pub async fn dial_wait(&mut self) {
         match self.swarm1.next().await.unwrap() {
             SwarmEvent::NewListenAddr { address, .. } => {
                 info!("swarm1 Listening on {:?}", address);
@@ -199,6 +199,9 @@ impl Client {
             }
             _ => {}
         }
+    }
+
+    pub async fn listen_wait(&mut self) {
         match self.swarm2.next().await.unwrap() {
             SwarmEvent::NewListenAddr { address, .. } => {
                 info!("swarm2 Listening on {:?}", address);
