@@ -28,7 +28,7 @@ const CONFIG_PATH: &str = "node.ini";
 fn main() {
     std::env::set_var("RUST_BACKTRACE", "1");
     if let Err(_) = std::env::var("RUST_LOG") {
-        std::env::set_var("RUST_LOG", "debug");
+        std::env::set_var("RUST_LOG", "info");
     }
     env_logger::init();
 
