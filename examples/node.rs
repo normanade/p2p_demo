@@ -59,7 +59,7 @@ async fn async_main() {
             peer = f1 => {
                 let mut dialed = false;
                 while !dialed {
-                    task::sleep(Duration::from_micros(90)).await;
+                    task::sleep(Duration::from_micros(30)).await;
                     println!("---- TRY LOCK DIAL -----");
                     if let Some(mut guard) = node.try_lock() {
                         // println!("!!!! DIAL LOCK GOT  !!!!!");
