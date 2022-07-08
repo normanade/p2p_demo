@@ -6,10 +6,12 @@ use libp2p::Transport;
 use libp2p::Multiaddr;
 use libp2p::noise::NoiseConfig;
 use libp2p::swarm::{Swarm, SwarmEvent};
-use futures::executor::block_on;
 use futures::future::FutureExt;
 use futures::stream::StreamExt;
 use log::info;
+use async_std::sync::{Arc, Mutex};
+use std::time::Duration;
+use futures::select;
 
 pub mod behaviour;
 
@@ -20,7 +22,7 @@ use crate::Event::Identify as IdentifyEvent;
 
 pub struct Hub {
     pub keys: Keys,
-    pub swarm: Swarm<Behaviour>,
+    pub swarm: Arc<Mutex<Swarm<Behaviour>>>,
 }
 
 impl Hub {
@@ -42,7 +44,7 @@ impl Hub {
 
         Self {
             keys: local_keys,
-            swarm: swarm,
+            swarm: Arc::new(Mutex::new(swarm)),
         }
     }
 
@@ -50,43 +52,62 @@ impl Hub {
         self.keys.peer_id = libp2p::PeerId::random();
     }
 
-    pub fn listen(&mut self, addr: Multiaddr) {
-        self.swarm.listen_on(addr).unwrap();
+    pub async fn bind(&self, addr: Multiaddr) {
+        let mut guard = self.swarm.lock_arc().await;
+        guard.listen_on(addr).unwrap();
         
         // Wait to listen on all interfaces.
-        block_on(async {
-            let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
-            loop {
-                futures::select! {
-                    event = self.swarm.next() => {
-                        match event.unwrap() {
-                            SwarmEvent::NewListenAddr { address, .. } => {
-                                info!("Listening on {:?}", address);
-                            }
-                            event => panic!("{:?}", event),
+        let mut delay = futures_timer::Delay::new(Duration::from_secs(1)).fuse();
+        loop {
+            futures::select! {
+                event = guard.next() => {
+                    match event.unwrap() {
+                        SwarmEvent::NewListenAddr { address, .. } => {
+                            info!("Listening on {:?}", address);
                         }
-                    }
-                    _ = delay => {
-                        // Likely listening on all interfaces now, thus continuing by breaking the loop.
-                        break;
+                        event => panic!("{:?}", event),
                     }
                 }
+                _ = delay => {
+                    // Likely listening on all interfaces now, thus continuing by breaking the loop.
+                    break;
+                }
             }
-        });
+        }
     }
 
-    pub async fn wait(&mut self) {
-        match self.swarm.next().await.expect("Infinite Stream.") {
-            SwarmEvent::NewListenAddr { address, .. } => {
-                info!("Listening on {:?}", address)
+    // every loop lasts 100 micro seconds, preserves time for other tasks
+    pub async fn wait(&self) {
+        let mut guard = self.swarm.lock_arc().await;
+
+        let mut delay = futures_timer::Delay::new(Duration::from_micros(100)).fuse();
+        loop { select! {
+            event = guard.next() => { match event.unwrap() {
+                SwarmEvent::Behaviour(RelayEvent(event)) => {
+                    info!("Relay {:?}", event)
+                }
+                SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                    info!("Identify {:?}", event)
+                }
+                SwarmEvent::Behaviour(_) => todo!(),
+                SwarmEvent::ConnectionEstablished { peer_id, endpoint, num_established, concurrent_dial_errors } => todo!(),
+                SwarmEvent::ConnectionClosed { peer_id, endpoint, num_established, cause } => todo!(),
+                SwarmEvent::IncomingConnection { local_addr, send_back_addr } => todo!(),
+                SwarmEvent::IncomingConnectionError { local_addr, send_back_addr, error } => todo!(),
+                SwarmEvent::OutgoingConnectionError { peer_id, error } => todo!(),
+                SwarmEvent::BannedPeer { peer_id, endpoint } => todo!(),
+                SwarmEvent::NewListenAddr { listener_id, address } => {
+                    info!("Listening on {:?}", address);
+                },
+                SwarmEvent::ExpiredListenAddr { listener_id, address } => todo!(),
+                SwarmEvent::ListenerClosed { listener_id, addresses, reason } => todo!(),
+                SwarmEvent::ListenerError { listener_id, error } => todo!(),
+                SwarmEvent::Dialing(_) => todo!(),
+            } }
+            _ = delay => {
+                // Timeout invoked, thus stop listening to swarm events
+                break;
             }
-            SwarmEvent::Behaviour(RelayEvent(event)) => {
-                info!("Relay {:?}", event)
-            }
-            SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                info!("Identify {:?}", event)
-            }
-            _ => {}
-        }
+        } }
     }
 }

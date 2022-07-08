@@ -15,7 +15,10 @@ use libp2p::identify::{IdentifyEvent as IdentifyEventKinds, IdentifyInfo};
 use futures::executor::block_on;
 use futures::future::FutureExt;
 use futures::stream::StreamExt;
-use log::{info, error};
+use std::time::Duration;
+use log::{info, error, debug};
+use async_std::sync::{Arc, Mutex};
+use futures::{join, select};
 
 pub mod behaviour;
 
@@ -29,9 +32,9 @@ use crate::Event::Dcutr as DcutrEvent;
 pub struct Client {
     pub keys: Keys,
     // dial
-    pub swarm1: Swarm<Behaviour>,
+    pub swarm1: Arc<Mutex<Swarm<Behaviour>>>,
     // listen
-    pub swarm2: Swarm<Behaviour>,
+    pub swarm2: Arc<Mutex<Swarm<Behaviour>>>,
 }
 
 impl Client {
@@ -83,8 +86,8 @@ impl Client {
 
         Self {
             keys: local_keys,
-            swarm1: swarm1,
-            swarm2: swarm2,
+            swarm1: Arc::new(Mutex::new(swarm1)),
+            swarm2: Arc::new(Mutex::new(swarm2)),
         }
     }
 
@@ -92,151 +95,248 @@ impl Client {
         self.keys.peer_id = PeerId::random();
     }
 
-    pub fn listen(&mut self, addr: Multiaddr) {
-        self.swarm1.listen_on(addr.clone()).unwrap();
-        self.swarm2.listen_on(addr).unwrap();
-
-        // Wait to listen on all interfaces.
-        block_on(async {
-            let mut delay = futures_timer::Delay::new(std::time::Duration::from_secs(1)).fuse();
-            loop {
-                futures::select! {
-                    event = self.swarm1.next() => {
-                        match event.unwrap() {
-                            SwarmEvent::NewListenAddr { address, .. } => {
-                                info!("swarm1 Listening on {:?}", address);
-                            }
-                            event => panic!("{:?}", event),
-                        }
-                    }
-                    event = self.swarm2.next() => {
-                        match event.unwrap() {
-                            SwarmEvent::NewListenAddr { address, .. } => {
-                                info!("swarm2 Listening on {:?}", address);
-                            }
-                            event => panic!("{:?}", event),
-                        }
-                    }
-                    _ = delay => {
-                        // Likely listening on all interfaces now, thus continuing by breaking the loop.
-                        break;
-                    }
-                }
-            }
-        });
+    pub async fn bind(&self, addr: Multiaddr) {
+        let dial = self.dialer_bind(addr.clone());
+        let listen = self.listener_bind(addr);
+        join!(dial, listen);
     }
 
-    pub fn relay(&mut self, addr: Multiaddr) {
-        // dial the relay server
-        self.swarm1.dial(addr.clone()).unwrap();
-        // Dial relay not for the reservation or relayed connection, but to
-        // (a) learn our local public address
-        // (b) enable a freshly started relay to learn its public address
-        block_on(async {
-            let mut learned_observed_addr = false;
-            let mut told_relay_observed_addr = false;
-    
-            loop {
-                match self.swarm1.next().await.unwrap() {
-                    SwarmEvent::NewListenAddr { .. } => {}
-                    SwarmEvent::Dialing { .. } => {}
-                    SwarmEvent::ConnectionEstablished { .. } => {}
-                    SwarmEvent::Behaviour(PingEvent(_)) => {}
-                    SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Sent { .. })) => {
-                        info!("Told relay its public address.");
-                        told_relay_observed_addr = true;
-                    }
-                    SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Received {
-                        info: IdentifyInfo { observed_addr, .. },
-                        ..
-                    })) => {
-                        info!("Relay told us our public address: {:?}", observed_addr);
-                        learned_observed_addr = true;
-                    }
-                    event => panic!("{:?}", event),
-                }
-    
-                if learned_observed_addr && told_relay_observed_addr {
-                    break;
-                }
-            }
-        });
+    pub async fn relay(&self, addr: Multiaddr) {
+        // // Dial relay not for the reservation or relayed connection, but to
+        // // (a) learn our local public address
+        // // (b) enable a freshly started relay to learn its public address
+        // let mut guard = self.swarm1.lock_arc().await;
+        // guard.dial(addr.clone()).unwrap();
+        // let mut learned_observed_addr = false;
+        // let mut told_relay_observed_addr = false;
+
+        // loop {
+        //     match guard.next().await.unwrap() {
+        //         SwarmEvent::NewListenAddr { .. } => {}
+        //         SwarmEvent::Dialing { .. } => {}
+        //         SwarmEvent::ConnectionEstablished { .. } => {}
+        //         SwarmEvent::Behaviour(PingEvent(_)) => {}
+        //         SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Sent { .. })) => {
+        //             info!("Told relay its public address.");
+        //             told_relay_observed_addr = true;
+        //         }
+        //         SwarmEvent::Behaviour(IdentifyEvent(IdentifyEventKinds::Received {
+        //             info: IdentifyInfo { observed_addr, .. },
+        //             ..
+        //         })) => {
+        //             info!("Relay told us our public address: {:?}", observed_addr);
+        //             learned_observed_addr = true;
+        //         }
+        //         event => panic!("{:?}", event),
+        //     }
+
+        //     if learned_observed_addr && told_relay_observed_addr {
+        //         break;
+        //     }
+        // }
 
         // listen from relay server
-        self.swarm2.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
+        let mut guard = self.swarm2.lock_arc().await;
+        guard.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
     }
 
-    pub fn relay_peer(&mut self, addr: Multiaddr, peer_id: PeerId) {
-        info!("swarm1 dialing peer {:?}", peer_id);
-        self.swarm1.dial(
+    pub async fn relay_peer(&self, addr: Multiaddr, peer_id: PeerId) {
+        let mut guard = self.swarm1.lock_arc().await;
+        info!("swarm1 ready to dial peer {:?}", peer_id);
+        guard.dial(
             addr.clone()
                 .with(Protocol::P2pCircuit)
                 .with(Protocol::P2p(peer_id.into()))
         ).unwrap();
     }
+    
+    // wait dialer and listener concurrently, every loop lasts 100 micro seconds
+    pub async fn wait(&self) {
+        let dial = self.dialer_wait();
+        let listen = self.listener_wait();
+        join!(dial, listen);
+    }
+}
 
-    pub async fn dial_wait(&mut self) {
-        match self.swarm1.next().await.unwrap() {
-            SwarmEvent::NewListenAddr { address, .. } => {
-                info!("swarm1 Listening on {:?}", address);
+
+impl Client {
+    pub async fn dialer_bind(&self, addr: Multiaddr) {
+        let mut guard = self.swarm1.lock_arc().await;
+        guard.listen_on(addr.clone()).unwrap();
+        
+        let mut delay = futures_timer::Delay::new(Duration::from_secs(1)).fuse();
+        loop { select! {
+            event = guard.next() => {
+                match event.unwrap() {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        info!("swarm1 Listening on {:?}", address);
+                    }
+                    event => panic!("{:?}", event),
+                }
             }
-            SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                info!("swarm1 Identify {:?}", event)
+            _ = delay => {
+                // Likely listening on all interfaces now, thus continuing by breaking the loop.
+                break;
             }
-            SwarmEvent::Behaviour(PingEvent(event)) => {
-                info!("swarm1 Ping {:?}", event)
-            }
-            SwarmEvent::Behaviour(DcutrEvent(event)) => {
-                info!("swarm1 Dcutr {:?}", event)
-            }
-            SwarmEvent::Behaviour(RelayClientEvent(event)) => {
-                info!("swarm1 Relay {:?}", event)
-            }
-            SwarmEvent::ConnectionEstablished {
-                peer_id, endpoint, ..
-            } => {
-                info!("swarm1 Established connection to {:?} via {:?}", peer_id, endpoint);
-            }
-            SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                error!("swarm1 Outgoing connection error to {:?}: {:?}", peer_id, error);
-            }
-            _ => {}
-        }
+        } }
     }
 
-    pub async fn listen_wait(&mut self) {
-        match self.swarm2.next().await.unwrap() {
-            SwarmEvent::NewListenAddr { address, .. } => {
-                info!("swarm2 Listening on {:?}", address);
+    pub async fn listener_bind(&self, addr: Multiaddr) {
+        let mut guard = self.swarm2.lock_arc().await;
+        guard.listen_on(addr.clone()).unwrap();
+        
+        let mut delay = futures_timer::Delay::new(Duration::from_micros(100)).fuse();
+        loop { select! {
+            event = guard.next() => {
+                match event.unwrap() {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        info!("swarm2 Listening on {:?}", address);
+                    }
+                    event => panic!("{:?}", event),
+                }
             }
-            // SwarmEvent::Behaviour(PingEvent(_)) => {}
-            SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                info!("swarm2 Identify {:?}", event)
+            _ = delay => {
+                // Likely listening on all interfaces now, thus continuing by breaking the loop.
+                break;
             }
-            SwarmEvent::Behaviour(PingEvent(event)) => {
-                info!("swarm2 Ping {:?}", event)
+        } }
+    }
+
+    pub async fn dialer_wait(&self) {
+        let mut guard = self.swarm1.lock_arc().await;
+        
+        let mut delay = futures_timer::Delay::new(Duration::from_micros(100)).fuse();
+        loop { select! {
+            event = guard.next() => { match event.unwrap() {
+                SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                    info!("swarm1 Identify {event:?}")
+                }
+                SwarmEvent::Behaviour(PingEvent(event)) => {
+                    debug!("swarm1 Ping {event:?}")
+                }
+                SwarmEvent::Behaviour(DcutrEvent(event)) => {
+                    info!("swarm1 Dcutr {event:?}")
+                }
+                SwarmEvent::Behaviour(RelayClientEvent(event)) => {
+                    info!("swarm1 Relay {event:?}")
+                }
+                SwarmEvent::Behaviour(_) => todo!(),
+                SwarmEvent::ConnectionEstablished {
+                    peer_id, endpoint,
+                    // num_established, concurrent_dial_errors
+                    ..
+                } => {
+                    info!("swarm1 Established connection to {peer_id:?} via {endpoint:?}");
+                },
+                SwarmEvent::ConnectionClosed {
+                    peer_id, endpoint,
+                    num_established, cause
+                } => todo!(),
+                SwarmEvent::IncomingConnection {
+                    local_addr, send_back_addr
+                } => todo!(),
+                SwarmEvent::IncomingConnectionError {
+                    local_addr, send_back_addr, error
+                } => todo!(),
+                SwarmEvent::OutgoingConnectionError {
+                    peer_id, error
+                } => {
+                    error!("swarm1 Outgoing connection error to {:?}: {:?}", peer_id, error);
+                }
+                SwarmEvent::BannedPeer {
+                    peer_id, endpoint
+                } => todo!(),
+                SwarmEvent::NewListenAddr {
+                    listener_id, address
+                } => {
+                    info!("swarm1 Listening on {listener_id:?}@{address}");
+                },
+                SwarmEvent::ExpiredListenAddr {
+                    listener_id, address
+                } => {
+                    info!("swarm1 Stopped listening to {listener_id:?}@{address}");
+                },
+                SwarmEvent::ListenerClosed {
+                    listener_id, addresses, reason
+                } => todo!(),
+                SwarmEvent::ListenerError {
+                    listener_id, error
+                } => todo!(),
+                SwarmEvent::Dialing(_) => todo!(),
+            } }
+            _ = delay => {
+                // Timeout invoked, thus stop listening to swarm events
+                break;
             }
-            SwarmEvent::Behaviour(DcutrEvent(event)) => {
-                info!("swarm2 Dcutr {:?}", event)
+        } }
+    }
+
+    pub async fn listener_wait(&self) {
+        let mut guard = self.swarm2.lock_arc().await;
+        
+        let mut delay = futures_timer::Delay::new(Duration::from_micros(100)).fuse();
+        loop { select! {
+            event = guard.next() => { match event.unwrap() {
+                SwarmEvent::Behaviour(IdentifyEvent(event)) => {
+                    info!("swarm2 Identify {event:?}")
+                }
+                SwarmEvent::Behaviour(PingEvent(event)) => {
+                    debug!("swarm2 Ping {event:?}")
+                }
+                SwarmEvent::Behaviour(DcutrEvent(event)) => {
+                    info!("swarm2 Dcutr {event:?}")
+                }
+                SwarmEvent::Behaviour(RelayClientEvent(event)) => {
+                    info!("swarm2 Relay {event:?}")
+                }
+                SwarmEvent::Behaviour(_) => todo!(),
+                SwarmEvent::ConnectionEstablished {
+                    peer_id, endpoint,
+                    // num_established, concurrent_dial_errors
+                    ..
+                } => {
+                    info!("swarm2 Established connection to {peer_id:?} via {endpoint:?}");
+                },
+                SwarmEvent::ConnectionClosed {
+                    peer_id, endpoint,
+                    num_established, cause
+                } => todo!(),
+                SwarmEvent::IncomingConnection {
+                    local_addr, send_back_addr
+                } => todo!(),
+                SwarmEvent::IncomingConnectionError {
+                    local_addr, send_back_addr, error
+                } => todo!(),
+                SwarmEvent::OutgoingConnectionError {
+                    peer_id, error
+                } => {
+                    error!("swarm2 Outgoing connection error to {:?}: {:?}", peer_id, error);
+                }
+                SwarmEvent::BannedPeer {
+                    peer_id, endpoint
+                } => todo!(),
+                SwarmEvent::NewListenAddr {
+                    listener_id, address
+                } => {
+                    info!("swarm2 Listening on {listener_id:?}@{address}");
+                },
+                SwarmEvent::ExpiredListenAddr {
+                    listener_id, address
+                } => {
+                    info!("swarm2 Stopped listening to {listener_id:?}@{address}");
+                },
+                SwarmEvent::ListenerClosed {
+                    listener_id, addresses, reason
+                } => todo!(),
+                SwarmEvent::ListenerError {
+                    listener_id, error
+                } => todo!(),
+                SwarmEvent::Dialing(_) => todo!(),
+            } }
+            _ = delay => {
+                // Timeout invoked, thus stop listening to swarm events
+                break;
             }
-            SwarmEvent::Behaviour(RelayClientEvent(RelayClientEventKinds::ReservationReqAccepted {
-                ..
-            })) => {
-                // listen swarm only
-                info!("swarm2 Relay Server accepted our reservation request.");
-            }
-            SwarmEvent::Behaviour(RelayClientEvent(event)) => {
-                info!("swarm2 Relay {:?}", event)
-            }
-            SwarmEvent::ConnectionEstablished {
-                peer_id, endpoint, ..
-            } => {
-                info!("swarm2 Established connection to {:?} via {:?}", peer_id, endpoint);
-            }
-            SwarmEvent::OutgoingConnectionError { peer_id, error } => {
-                error!("swarm2 Outgoing connection error to {:?}: {:?}", peer_id, error);
-            }
-            _ => {}
-        }
+        } }
     }
 }

@@ -32,35 +32,34 @@ impl Node {
         }
     }
 
-    pub fn listen(&mut self, addr: Multiaddr) {
+    pub async fn bind(&self, addr: Multiaddr) {
         match self {
-            Node::Hub(x) => x.listen(addr),
-            Node::Client(x) => x.listen(addr),
+            Node::Hub(x) => x.bind(addr).await,
+            Node::Client(x) => x.bind(addr).await,
         };
     }
 
-    pub fn relay(&mut self, addr: Option<Multiaddr>) {
+    pub async fn relay(&self, addr: Option<Multiaddr>) {
         match self {
-            Node::Client(x) => x.relay(addr.unwrap()),
-            _ => (),
+            Node::Client(x) => x.relay(addr.unwrap()).await,
+            _ => unreachable!(),
         };
     }
 
-    pub fn dial(&mut self, addr: Option<Multiaddr>, peer_id: PeerId) {
+    pub async fn dial(&self, addr: Option<Multiaddr>, peer_id: PeerId) {
         match self {
-            Node::Client(x) => x.relay_peer(addr.unwrap(), peer_id),
-            _ => (),
+            Node::Client(x) => x.relay_peer(addr.unwrap(), peer_id).await,
+            _ => unreachable!(),
         };
     }
 
-    pub async fn wait(&mut self) {
+    pub async fn wait(&self) {
         match self {
             Node::Hub(x) => {
                 x.wait().await;
             }
             Node::Client(x) => {
-                x.listen_wait().await;
-                x.dial_wait().await;
+                x.wait().await;
             }
         }
     }
