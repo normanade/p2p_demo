@@ -8,7 +8,7 @@ use libp2p::noise::NoiseConfig;
 use libp2p::swarm::{Swarm, SwarmEvent};
 use futures::future::FutureExt;
 use futures::stream::StreamExt;
-use log::info;
+use log::{info, debug, error};
 use async_std::sync::{Arc, Mutex};
 use std::time::Duration;
 use futures::select;
@@ -18,6 +18,7 @@ pub mod behaviour;
 use super::keys::Keys;
 use behaviour::Behaviour;
 use crate::Event::Relay as RelayEvent;
+use crate::Event::Ping as PingEvent;
 use crate::Event::Identify as IdentifyEvent;
 
 pub struct Hub {
@@ -89,10 +90,27 @@ impl Hub {
                 SwarmEvent::Behaviour(IdentifyEvent(event)) => {
                     info!("Identify {:?}", event)
                 }
-                SwarmEvent::Behaviour(_) => todo!(),
-                SwarmEvent::ConnectionEstablished { peer_id, endpoint, num_established, concurrent_dial_errors } => todo!(),
-                SwarmEvent::ConnectionClosed { peer_id, endpoint, num_established, cause } => todo!(),
-                SwarmEvent::IncomingConnection { local_addr, send_back_addr } => todo!(),
+                SwarmEvent::Behaviour(PingEvent(event)) => {
+                    debug!("Ping {event:?}")
+                }
+                SwarmEvent::Behaviour(e) => {
+                    info!("Event {:?}", e)
+                },
+                SwarmEvent::ConnectionEstablished {
+                    peer_id, endpoint,
+                    // num_established, concurrent_dial_errors
+                    ..
+                } => {
+                    debug!("Established connection to {peer_id:?}@{endpoint:?}");
+                },
+                SwarmEvent::ConnectionClosed {
+                    peer_id, endpoint, num_established: _, cause
+                } => {
+                    error!("Connection with {peer_id:?}@{endpoint:?} closed due to {cause:?}");
+                },
+                SwarmEvent::IncomingConnection { local_addr, send_back_addr } => {
+                    debug!("Received connection from {send_back_addr} to {local_addr}");
+                },
                 SwarmEvent::IncomingConnectionError { local_addr, send_back_addr, error } => todo!(),
                 SwarmEvent::OutgoingConnectionError { peer_id, error } => todo!(),
                 SwarmEvent::BannedPeer { peer_id, endpoint } => todo!(),
