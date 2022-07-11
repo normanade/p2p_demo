@@ -29,7 +29,7 @@ pub struct Behaviour {
 impl Behaviour {
     pub fn new(public_key: PublicKey, client: Client) -> Self {
         Self {
-            ping: Ping::new(PingConfig::new()),
+            ping: Ping::new(PingConfig::new().with_keep_alive(true)),
             identify: Identify::new(IdentifyConfig::new(
                 "/TODO/0.0.1".to_string(),
                 public_key,
