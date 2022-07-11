@@ -10,7 +10,8 @@ use libp2p::Multiaddr;
 use libp2p::noise::NoiseConfig;
 use libp2p::PeerId;
 use libp2p::swarm::{Swarm, SwarmBuilder, SwarmEvent};
-use libp2p::relay::v2::client::{Event as RelayClientEventKinds, Client as RelayClient};
+// use libp2p::relay::v2::client::{Event as RelayClientEventKinds, Client as RelayClient};
+use libp2p::relay::v2::client::Client as RelayClient;
 use libp2p::identify::{IdentifyEvent as IdentifyEventKinds, IdentifyInfo};
 use futures::executor::block_on;
 use futures::future::FutureExt;
@@ -80,7 +81,7 @@ impl Client {
             event = guard.next() => {
                 match event.unwrap() {
                     SwarmEvent::NewListenAddr { address, .. } => {
-                        info!("swarm1 Listening on {:?}", address);
+                        info!("Listening on {:?}", address);
                     }
                     event => panic!("{:?}", event),
                 }
@@ -133,7 +134,7 @@ impl Client {
 
     pub async fn relay_peer(&self, addr: Multiaddr, peer_id: PeerId) {
         let mut guard = self.swarm.lock_arc().await;
-        info!("swarm1 ready to dial peer {:?}", peer_id);
+        info!("ready to dial peer {:?}", peer_id);
         guard.dial(
             addr.clone()
                 .with(Protocol::P2pCircuit)
@@ -149,22 +150,22 @@ impl Client {
         loop { select! {
             event = guard.next() => { match event.unwrap() {
                 SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                    info!("swarm1 Identify {event:?}")
+                    info!("Identify {event:?}")
                 }
                 SwarmEvent::Behaviour(PingEvent(event)) => {
-                    debug!("swarm1 Ping {event:?}")
+                    debug!("Ping {event:?}")
                 }
                 SwarmEvent::Behaviour(DcutrEvent(event)) => {
-                    info!("swarm1 Dcutr {event:?}")
+                    info!("Dcutr {event:?}")
                 }
                 SwarmEvent::Behaviour(RelayClientEvent(event)) => {
-                    info!("swarm1 Relay {event:?}")
+                    info!("Relay {event:?}")
                 }
                 SwarmEvent::Behaviour(_) => todo!(),
                 SwarmEvent::ConnectionEstablished {
                     peer_id, endpoint, num_established: _, concurrent_dial_errors: _
                 } => {
-                    info!("swarm1 Established connection to {peer_id:?} via {endpoint:?}");
+                    info!("Established connection to {peer_id:?} via {endpoint:?}");
                 },
                 SwarmEvent::ConnectionClosed {
                     peer_id, endpoint, num_established: _, cause
@@ -174,41 +175,43 @@ impl Client {
                 SwarmEvent::IncomingConnection {
                     local_addr: _, send_back_addr
                 } => {
-                    debug!("swarm1 Incoming connection from {send_back_addr}");
+                    debug!("Incoming connection from {send_back_addr}");
                 },
                 SwarmEvent::IncomingConnectionError {
                     local_addr: _, send_back_addr, error
                 } => {
-                    error!("swarm1 Incoming connection from {send_back_addr} error: {error}");
+                    error!("Incoming connection from {send_back_addr} error: {error}");
                 },
                 SwarmEvent::OutgoingConnectionError {
                     peer_id, error
                 } => {
-                    error!("swarm1 Outgoing connection error to {:?}: {:?}", peer_id, error);
+                    error!("Outgoing connection error to {:?}: {:?}", peer_id, error);
                 }
                 SwarmEvent::BannedPeer {
-                    peer_id, endpoint
+                    // peer_id, endpoint
+                    ..
                 } => todo!(),
                 SwarmEvent::NewListenAddr {
                     listener_id, address
                 } => {
-                    info!("swarm1 Listening on {listener_id:?}@{address}");
+                    info!("Listening on {listener_id:?}@{address}");
                 },
                 SwarmEvent::ExpiredListenAddr {
                     listener_id, address
                 } => {
-                    info!("swarm1 Stopped listening to {listener_id:?}@{address}");
+                    info!("Stopped listening to {listener_id:?}@{address}");
                 },
                 SwarmEvent::ListenerClosed {
                     listener_id, addresses: _, reason
                 } => {
-                    error!("swarm1 Listener {listener_id:?} closed due to {reason:?}");
+                    error!("Listener {listener_id:?} closed due to {reason:?}");
                 },
                 SwarmEvent::ListenerError {
-                    listener_id, error
+                    // listener_id, error
+                    ..
                 } => todo!(),
                 SwarmEvent::Dialing(peer_id) => {
-                    info!("swarm1 Dailing {peer_id:?}");
+                    info!("Dailing {peer_id:?}");
                 }
             } }
             _ = delay => {
