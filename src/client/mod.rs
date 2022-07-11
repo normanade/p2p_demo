@@ -97,6 +97,8 @@ impl Client {
         // Dial relay not for the reservation or relayed connection, but to
         // (a) learn our local public address
         // (b) enable a freshly started relay to learn its public address
+        // If reservation is requested when relay haven't acknowledged
+        // its public address yet, reservation will fail
         let mut guard = self.swarm.lock_arc().await;
         guard.dial(addr.clone()).unwrap();
         let mut learned_observed_addr = false;
@@ -128,7 +130,6 @@ impl Client {
         }
 
         // listen from relay server
-        // let mut guard = self.swarm2.lock_arc().await;
         guard.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
     }
 
