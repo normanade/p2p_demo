@@ -111,15 +111,36 @@ impl Hub {
                 SwarmEvent::IncomingConnection { local_addr, send_back_addr } => {
                     debug!("Received connection from {send_back_addr} to {local_addr}");
                 },
-                SwarmEvent::IncomingConnectionError { local_addr, send_back_addr, error } => todo!(),
-                SwarmEvent::OutgoingConnectionError { peer_id, error } => todo!(),
-                SwarmEvent::BannedPeer { peer_id, endpoint } => todo!(),
-                SwarmEvent::NewListenAddr { listener_id, address } => {
-                    info!("Listening on {:?}", address);
+                SwarmEvent::IncomingConnectionError {
+                    // local_addr, send_back_addr, error
+                    ..
+                } => todo!(),
+                SwarmEvent::OutgoingConnectionError {
+                    // peer_id, error
+                    ..
+                } => todo!(),
+                SwarmEvent::BannedPeer {
+                    // peer_id, endpoint
+                    ..
+                } => todo!(),
+                SwarmEvent::NewListenAddr {
+                    listener_id, address
+                } => {
+                    info!("Listening on {listener_id:?}@{address}");
                 },
-                SwarmEvent::ExpiredListenAddr { listener_id, address } => todo!(),
-                SwarmEvent::ListenerClosed { listener_id, addresses, reason } => todo!(),
-                SwarmEvent::ListenerError { listener_id, error } => todo!(),
+                SwarmEvent::ExpiredListenAddr {
+                    listener_id, address
+                } => {
+                    info!("Stopped listening to {listener_id:?}@{address}");
+                },
+                SwarmEvent::ListenerClosed {
+                    // listener_id, addresses, reason
+                    ..
+                } => todo!(),
+                SwarmEvent::ListenerError {
+                    // listener_id, error
+                    ..
+                } => todo!(),
                 SwarmEvent::Dialing(_) => todo!(),
             } }
             _ = delay => {
