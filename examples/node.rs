@@ -3,17 +3,15 @@
 /// or https://blog.ipfs.io/2022-01-20-libp2p-hole-punching/
 /// for concrete guide of usage.
 
-use libp2p::multiaddr::Protocol;
-use libp2p::Multiaddr;
-use libp2p::PeerId;
-use std::str::FromStr;
-use std::net::{Ipv4Addr, Ipv6Addr};
-use log::{info, debug};
+use futures::join;
+use std::io::Write;
+use std::process::exit;
+use std::time::Duration;
+use log::{info, warn};
 
 use async_std::task::block_on;
-use futures::join;
-use std::time::Duration;
 use async_std::task;
+use async_std::channel;
 
 use p2p_demo::conf::Conf;
 use p2p_demo::Node;
@@ -32,62 +30,57 @@ fn main() {
 
 async fn async_main() {
     let conf = Conf::new(CONFIG_PATH);
-    debug!("Config file from {}: {:?}", CONFIG_PATH, conf);
+    let role = conf.role.clone();
+    conf.print_detail();
 
-    let node = Node::new(conf.role.clone());
+    let node = Node::new(conf);
     info!("Local peer id: {:?}", node.get_peer_id());
 
-    bind_local_address(&conf, &node).await;
+    node.bind().await;
 
-    // only effective when `role' is client
-    // connect to configured relay server
-    if let "client" = conf.role.as_str() {
-        let relay_addr = conf.get_relay_address();
-        node.relay(relay_addr.clone()).await;
+    if let "hub" = role.as_str() {
+        wait_response(&node).await
+    }
+    else {
+        let (sender, receiver) = channel::bounded(1);
 
-        let f1 = dial_peer_with_relay(&node, relay_addr);
+        // sets handler which respondes to user input in a spawned process
+        ctrlc::set_handler(move || {
+            if sender.is_closed() || sender.is_full() {
+                return;
+            }
+            let mut user_input = String::new();
+            let stdout_handle = std::io::stdout();
+            let mut guard = stdout_handle.lock();
+            guard.write(b"\r> ").expect("Write to stdout failed");
+            guard.flush().expect("Flush stdout failed");
+            std::io::stdin().read_line(&mut user_input).unwrap();
+    
+            block_on(async {
+                sender.send(user_input).await.expect("Channel error")
+            });
+        }).expect("Error setting Ctrl-C handler");
+    
+        let f1 = async {
+            loop {
+                if let Ok(user_input) = receiver.recv().await {
+                    match node.execute(user_input).await {
+                        Ok(true) => break,
+                        Ok(false) => task::sleep(Duration::from_micros(100)).await,
+                        Err(err) => warn!("{}", err),
+                    }
+                }
+            }
+            exit(0);
+        };
         let f2 = wait_response(&node);
         join!(f1, f2);
     }
-    else {
-        wait_response(&node).await
-    }
-}
-
-async fn bind_local_address(conf: &Conf, node: &Node) {
-    // Listen on all interfaces
-    let port = conf.get_bind_port();
-    let listen_addr = match conf.use_ipv6 {
-        true => Multiaddr::empty()
-            .with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-            .with(Protocol::Tcp(port))
-            .with(Protocol::from(Ipv6Addr::UNSPECIFIED)),
-        false => Multiaddr::empty()
-            .with(Protocol::from(Ipv4Addr::UNSPECIFIED))
-            .with(Protocol::Tcp(port)),
-    };
-
-    node.bind(listen_addr).await;
-}
-
-
-async fn dial_peer_with_relay(node: &Node, relay_addr: Option<Multiaddr>) {
-    let peer = input_peer_id().await;
-    node.dial(relay_addr, peer).await;
-}
-
-async fn input_peer_id() -> PeerId {
-    // wait 3 seconds till swarms connected to relay server
-    task::sleep(Duration::from_secs(5)).await;
-    println!("Please input relay client PeerID:");
-    let mut input = String::new();
-    async_std::io::stdin().read_line(&mut input).await.unwrap();
-    PeerId::from_str(input.trim()).expect("Invalid PeerID")
 }
 
 async fn wait_response(node: &Node) {
     loop {
-        // task::sleep(Duration::from_micros(100)).await;
+        task::sleep(Duration::from_micros(100)).await;
         node.wait().await;
     }
 }
