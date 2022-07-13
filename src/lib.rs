@@ -1,7 +1,6 @@
 ///
 
 use libp2p::PeerId;
-use libp2p::Multiaddr;
 
 pub mod keys;
 pub mod conf;
@@ -17,10 +16,10 @@ pub enum Node {
 }
 
 impl Node {
-    pub fn new(role: String) -> Self {
-        match role.as_str() {
-            "hub" => Node::Hub(hub::Hub::new()),
-            "client" => Node::Client(client::Client::new()),
+    pub fn new(conf: conf::Conf) -> Self {
+        match conf.role.trim() {
+            "hub" => Node::Hub(hub::Hub::new(conf)),
+            "client" => Node::Client(client::Client::new(conf)),
             _ => panic!("No such role!")
         }
     }
@@ -32,25 +31,18 @@ impl Node {
         }
     }
 
-    pub async fn bind(&self, addr: Multiaddr) {
+    pub async fn bind(&self) {
         match self {
-            Node::Hub(x) => x.bind(addr).await,
-            Node::Client(x) => x.bind(addr).await,
+            Node::Hub(x) => x.bind().await,
+            Node::Client(x) => x.bind().await,
         };
     }
-
-    pub async fn relay(&self, addr: Option<Multiaddr>) {
+    
+    pub async fn execute(&self, user_input: String) -> Result<bool, String> {
         match self {
-            Node::Client(x) => x.relay(addr.unwrap()).await,
+            Node::Client(x) => x.execute(user_input).await,
             _ => unreachable!(),
-        };
-    }
-
-    pub async fn dial(&self, addr: Option<Multiaddr>, peer_id: PeerId) {
-        match self {
-            Node::Client(x) => x.relay_peer(addr.unwrap(), peer_id).await,
-            _ => unreachable!(),
-        };
+        }
     }
 
     pub async fn wait(&self) {

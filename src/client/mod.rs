@@ -6,7 +6,6 @@ use libp2p::tcp::{GenTcpConfig, TcpTransport};
 use libp2p::dns::DnsConfig;
 use libp2p::Transport;
 use libp2p::multiaddr::Protocol;
-use libp2p::Multiaddr;
 use libp2p::noise::NoiseConfig;
 use libp2p::PeerId;
 use libp2p::swarm::{Swarm, SwarmBuilder, SwarmEvent};
@@ -17,12 +16,14 @@ use futures::executor::block_on;
 use futures::future::FutureExt;
 use futures::stream::StreamExt;
 use std::time::Duration;
+use std::str::FromStr;
 use log::{info, error, debug};
-use async_std::sync::{Arc, Mutex};
+use async_std::sync::{Arc, Mutex, RwLock};
 use futures::select;
 
 pub mod behaviour;
 
+use super::conf;
 use super::keys::Keys;
 use behaviour::Behaviour;
 use crate::Event::RelayClient as RelayClientEvent;
@@ -32,12 +33,13 @@ use crate::Event::Dcutr as DcutrEvent;
 
 pub struct Client {
     pub keys: Keys,
-    // listen
     pub swarm: Arc<Mutex<Swarm<Behaviour>>>,
+    conf: conf::Conf,
+    relay_id: RwLock<Option<PeerId>>,
 }
 
 impl Client {
-    pub fn new() -> Self {
+    pub fn new(conf: conf::Conf) -> Self {
         let local_keys = Keys::new();
         let local_public_key = local_keys.key.public();
 
@@ -65,6 +67,8 @@ impl Client {
         Self {
             keys: local_keys,
             swarm: Arc::new(Mutex::new(swarm)),
+            conf: conf,
+            relay_id: RwLock::new(None),
         }
     }
 
@@ -72,9 +76,11 @@ impl Client {
         self.keys.peer_id = PeerId::random();
     }
 
-    pub async fn bind(&self, addr: Multiaddr) {
+    pub async fn bind(&self) {
+        let listen_addr = self.conf.get_bind_address();
+
         let mut guard = self.swarm.lock_arc().await;
-        guard.listen_on(addr.clone()).unwrap();
+        guard.listen_on(listen_addr).unwrap();
         
         let mut delay = futures_timer::Delay::new(Duration::from_secs(1)).fuse();
         loop { select! {
@@ -93,13 +99,62 @@ impl Client {
         } }
     }
 
-    pub async fn relay(&self, addr: Multiaddr) {
-        // Dial relay not for the reservation or relayed connection, but to
-        // (a) learn our local public address
-        // (b) enable a freshly started relay to learn its public address
-        // If reservation is requested when relay haven't acknowledged
-        // its public address yet, reservation will fail
+    pub async fn execute(&self, user_input: String) -> Result<bool, String> {
+        let mut iter = user_input.split_whitespace();
+        match iter.next() {
+            Some("relay") | Some("r") => {
+                if let Some(peer_id) = iter.next() {
+                    match PeerId::from_str(peer_id) {
+                        Ok(peer_id) => {
+                            self.relay(peer_id).await;
+                            Ok(false)
+                        },
+                        Err(err) => {
+                            Err(err.to_string() + " - PeerId invalid!")
+                        },
+                    }
+                }
+                else {
+                    Err("Please input peerid as the second param.".to_string())
+                }
+            },
+            Some("dial") | Some("d") => {
+                if let Some(peer_id) = iter.next() {
+                    match PeerId::from_str(peer_id) {
+                        Ok(peer_id) => {
+                            self.relay_peer(peer_id).await;
+                            Ok(false)
+                        },
+                        Err(err) => {
+                            Err(err.to_string() + " - PeerId invalid!")
+                        }
+                    }
+                }
+                else {
+                    Err("Please input peerid as the second param.".to_string())
+                }
+            },
+            Some("quit") | Some("q") => Ok(true),
+            None => Ok(false),
+            _ => {
+                Err("Command invalid!".to_string())
+            }
+        }
+    }
+
+    pub async fn relay(&self, relay_id: PeerId) {
+        let mut writer = self.relay_id.write().await;
+        *writer = Some(relay_id);
+        drop(writer);
+        let addr = self.conf.get_relay_address(relay_id).unwrap();
+        // Dial relay not for the reservation or relayed connection, but to:
+        // (a) learn our local public address,
+        // (b) enable a freshly started relay to learn its public address.
+        // If reservation is requested when relay hasn't acknowledged
+        // its public address yet, the reservation will fail.
+        info!("Getting swarm dial lock");
         let mut guard = self.swarm.lock_arc().await;
+        info!("swarm dial lock success");
         guard.dial(addr.clone()).unwrap();
         let mut learned_observed_addr = false;
         let mut told_relay_observed_addr = false;
@@ -121,6 +176,11 @@ impl Client {
                     info!("Relay told us our public address: {:?}", observed_addr);
                     learned_observed_addr = true;
                 }
+                SwarmEvent::OutgoingConnectionError {
+                    peer_id, error
+                } => {
+                    error!("Outgoing connection error to {:?}: {:?}", peer_id, error);
+                }
                 event => panic!("{:?}", event),
             }
 
@@ -133,14 +193,21 @@ impl Client {
         guard.listen_on(addr.with(Protocol::P2pCircuit)).unwrap();
     }
 
-    pub async fn relay_peer(&self, addr: Multiaddr, peer_id: PeerId) {
-        let mut guard = self.swarm.lock_arc().await;
-        info!("ready to dial peer {:?}", peer_id);
-        guard.dial(
-            addr.clone()
-                .with(Protocol::P2pCircuit)
-                .with(Protocol::P2p(peer_id.into()))
-        ).unwrap();
+    pub async fn relay_peer(&self, peer_id: PeerId) {
+        let reader = self.relay_id.read().await;
+        if let Some(relay_id) = *reader {
+            let addr = self.conf.get_relay_address(relay_id).unwrap();
+            let mut guard = self.swarm.lock_arc().await;
+            info!("Ready to dial peer {:?}", peer_id);
+            guard.dial(
+                addr.clone()
+                    .with(Protocol::P2pCircuit)
+                    .with(Protocol::P2p(peer_id.into()))
+            ).unwrap();
+        }
+        else {
+            error!("Relay not found, can't dial peer!");
+        }
     }
     
     // wait dialer and listener concurrently, every loop lasts 100 micro seconds
@@ -154,7 +221,7 @@ impl Client {
                     info!("Identify {event:?}")
                 }
                 SwarmEvent::Behaviour(PingEvent(event)) => {
-                    debug!("Ping {event:?}")
+                    info!("Ping {event:?}")
                 }
                 SwarmEvent::Behaviour(DcutrEvent(event)) => {
                     info!("Dcutr {event:?}")

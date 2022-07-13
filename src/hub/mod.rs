@@ -3,7 +3,6 @@
 use libp2p::core::upgrade;
 use libp2p::tcp::TcpTransport;
 use libp2p::Transport;
-use libp2p::Multiaddr;
 use libp2p::noise::NoiseConfig;
 use libp2p::swarm::{Swarm, SwarmEvent};
 use futures::future::FutureExt;
@@ -15,6 +14,7 @@ use futures::select;
 
 pub mod behaviour;
 
+use super::conf;
 use super::keys::Keys;
 use behaviour::Behaviour;
 use crate::Event::Relay as RelayEvent;
@@ -24,10 +24,11 @@ use crate::Event::Identify as IdentifyEvent;
 pub struct Hub {
     pub keys: Keys,
     pub swarm: Arc<Mutex<Swarm<Behaviour>>>,
+    conf: conf::Conf,
 }
 
 impl Hub {
-    pub fn new() -> Self {
+    pub fn new(conf: conf::Conf) -> Self {
         let local_keys = Keys::new();
         let local_public_key = local_keys.key.public();
 
@@ -46,6 +47,7 @@ impl Hub {
         Self {
             keys: local_keys,
             swarm: Arc::new(Mutex::new(swarm)),
+            conf: conf,
         }
     }
 
@@ -53,9 +55,11 @@ impl Hub {
         self.keys.peer_id = libp2p::PeerId::random();
     }
 
-    pub async fn bind(&self, addr: Multiaddr) {
+    pub async fn bind(&self) {
+        let listen_addr = self.conf.get_bind_address();
+
         let mut guard = self.swarm.lock_arc().await;
-        guard.listen_on(addr).unwrap();
+        guard.listen_on(listen_addr).unwrap();
         
         // Wait to listen on all interfaces.
         let mut delay = futures_timer::Delay::new(Duration::from_secs(1)).fuse();
@@ -88,7 +92,7 @@ impl Hub {
                     info!("Relay {:?}", event)
                 }
                 SwarmEvent::Behaviour(IdentifyEvent(event)) => {
-                    info!("Identify {:?}", event)
+                    debug!("Identify {:?}", event)
                 }
                 SwarmEvent::Behaviour(PingEvent(event)) => {
                     debug!("Ping {event:?}")
