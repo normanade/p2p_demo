@@ -120,9 +120,10 @@ impl Hub {
                     ..
                 } => todo!(),
                 SwarmEvent::OutgoingConnectionError {
-                    // peer_id, error
-                    ..
-                } => todo!(),
+                    peer_id, error
+                } => {
+                    error!("Outgoing connection error to {:?}: {:?}", peer_id, error);
+                },
                 SwarmEvent::BannedPeer {
                     // peer_id, endpoint
                     ..
